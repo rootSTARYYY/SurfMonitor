@@ -333,7 +333,7 @@ export type ThemePreference = 'dark' | 'midnight' | 'oled';
 
 export interface AppSettings {
   theme: ThemePreference;
-  defaultIntervalSeconds: number;
+  defaultIntervalSeconds: CheckIntervalSeconds;
   defaultTimeoutSeconds: number;
   launchOnStartup: boolean;
   minimizeToTray: boolean;
