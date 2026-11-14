@@ -1,14 +1,12 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import {
-  Activity,
   ArrowLeft,
   ArrowRight,
-  Bell,
   CheckCircle2,
-  Palette,
-  Server,
   Sparkles,
   User,
+  X,
 } from 'lucide-react';
 import { UserProfileState } from '@/types';
 
@@ -18,76 +16,78 @@ interface OnboardingExperienceProps {
   onComplete: (next: UserProfileState) => void;
 }
 
-const SLIDES = [
+interface TourStep {
+  id: string;
+  targetSelector: string | null;
+  placement: 'center' | 'right' | 'bottom' | 'left';
+  badge: string;
+  title: string;
+  description: string;
+}
+
+const TOUR_STEPS: TourStep[] = [
   {
     id: 'welcome',
-    badge: '100% Free · Local-First',
+    targetSelector: null,
+    placement: 'center',
+    badge: '100% Free · Local-First · v4.2.1',
     title: 'Welcome to Surf Monitor',
     description:
-      'Your local-first desktop command center for websites, APIs, and remote Linux infrastructure. Completely free—no accounts, no trials, and no cloud lock-in.',
-    highlights: [
-      'All telemetry, logs, and credentials stay encrypted on your machine',
-      'Built for speed with SQLite persistence and real-time charts',
-      'Ready for Windows, macOS, and Linux workflows',
-    ],
-    icon: Sparkles,
-    accent: 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10',
+      'Let’s take a quick 30-second tour of your live dashboard. Surf Monitor runs locally on your machine with SQLite persistence—no accounts, no trials, and no cloud lock-in.',
   },
   {
-    id: 'monitoring',
-    badge: 'Website & Protocol Telemetry',
-    title: 'Infrastructure Monitoring',
+    id: 'overview',
+    targetSelector: '[data-tour="overview-kpis"]',
+    placement: 'bottom',
+    badge: 'Live Telemetry',
+    title: 'Infrastructure Overview',
     description:
-      'Track HTTP/HTTPS endpoints, SSL certificates, DNS records, TCP ports, ICMP ping, and cron heartbeats with three-state health classification.',
-    highlights: [
-      'Distinguish network reachability from HTTP application health (UP / DEGRADED / DOWN)',
-      'Track P50/P95 response times and multi-day availability history',
-      'Organize monitors into Groups, Services, and Dependency Maps',
-    ],
-    icon: Activity,
-    accent: 'text-sky-400 border-sky-500/30 bg-sky-500/10',
+      'See total monitors, healthy endpoints, active issues, overall availability, and P95 latency at a glance.',
   },
   {
-    id: 'agent',
-    badge: 'SSH-Tunneled Linux Agent',
-    title: 'Server Agent & PM2 Control',
+    id: 'monitors',
+    targetSelector: '[data-tour="nav-monitors"]',
+    placement: 'right',
+    badge: 'Website & Protocol Checks',
+    title: 'Monitors & Protocols',
     description:
-      'Connect your Ubuntu/Debian VPS in one click over an authenticated localhost-only SSH tunnel—no public ports exposed.',
-    highlights: [
-      'Real-time CPU, RAM, disk, load average, and network throughput',
-      'Multi-user PM2 discovery, CPU/memory graphs, and redacted log streaming',
-      'Manage Docker containers and systemd services safely with audit logs',
-    ],
-    icon: Server,
-    accent: 'text-violet-400 border-violet-500/30 bg-violet-500/10',
+      'Track HTTP/HTTPS, SSL certificates, DNS records, TCP ports, ICMP ping, and cron heartbeats with UP / DEGRADED / DOWN states.',
   },
   {
-    id: 'alerts',
-    badge: 'Instant Incident Alerts',
+    id: 'servers',
+    targetSelector: '[data-tour="nav-servers"]',
+    placement: 'right',
+    badge: 'SSH-Tunneled Agent',
+    title: 'Remote Servers, Docker & PM2',
+    description:
+      'Connect Linux VPS hosts over SSH to monitor CPU, RAM, disk, Docker containers, systemd services, and multi-user PM2 processes.',
+  },
+  {
+    id: 'notifications',
+    targetSelector: '[data-tour="nav-notifications"]',
+    placement: 'right',
+    badge: 'Instant Alerts',
     title: 'Alerts & Notifications',
     description:
-      'Get notified the moment an endpoint, server threshold, or PM2 process goes down—and again when it recovers.',
-    highlights: [
-      'Discord webhooks, Telegram bots, Custom Webhooks, and Windows Desktop alerts',
-      'Full SMTP Email support with Brevo, Gmail, Outlook, and Custom presets',
-      'Cooldown deduplication and Maintenance Windows to silence planned restarts',
-    ],
-    icon: Bell,
-    accent: 'text-amber-400 border-amber-500/30 bg-amber-500/10',
+      'Receive outage and recovery alerts via Discord, Telegram, SMTP Email (Brevo, Gmail, Outlook, Custom), Webhooks, or Windows Desktop.',
   },
   {
-    id: 'customization',
+    id: 'settings',
+    targetSelector: '[data-tour="nav-settings"]',
+    placement: 'right',
     badge: 'Theme Studio',
     title: 'Customization & Settings',
     description:
-      'Make Surf Monitor look exactly the way you want with unlimited custom themes, live previews, and a safe Custom CSS layer.',
-    highlights: [
-      'Customize global colors, status badges, typography, layout density, and radii',
-      'Import and export shareable surf-theme.json files anytime',
-      'Switch seamlessly between dark, midnight, OLED, or custom light themes',
-    ],
-    icon: Palette,
-    accent: 'text-pink-400 border-pink-500/30 bg-pink-500/10',
+      'Open Theme Studio under Settings → Appearance to customize every color, font, layout, background, and custom CSS—dark or light.',
+  },
+  {
+    id: 'add-monitor',
+    targetSelector: '[data-tour="header-add-monitor"]',
+    placement: 'bottom',
+    badge: 'Quick Action',
+    title: 'Add Your First Monitor',
+    description:
+      'Click here anytime to add a website, API, TCP port, or heartbeat monitor in seconds.',
   },
 ];
 
@@ -96,23 +96,44 @@ export const OnboardingExperience: React.FC<OnboardingExperienceProps> = ({
   isReplay = false,
   onComplete,
 }) => {
-  const [slideIdx, setSlideIdx] = useState(0);
-  const [step, setStep] = useState<'slides' | 'username'>('slides');
+  const [stepIdx, setStepIdx] = useState(0);
+  const [phase, setPhase] = useState<'tour' | 'username'>('tour');
+  const [rect, setRect] = useState<DOMRect | null>(null);
   const [username, setUsername] = useState(existingUsername ?? '');
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const currentSlide = SLIDES[slideIdx];
-  const SlideIcon = currentSlide.icon;
-  const isLastSlide = slideIdx === SLIDES.length - 1;
+  const current = TOUR_STEPS[stepIdx];
 
-  const finishSlides = async () => {
-    // If replaying from Settings and username already exists, return immediately
+  const measureTarget = useCallback(() => {
+    if (phase !== 'tour' || !current.targetSelector) {
+      setRect(null);
+      return;
+    }
+    const el = document.querySelector(current.targetSelector);
+    if (el) {
+      setRect(el.getBoundingClientRect());
+    } else {
+      setRect(null);
+    }
+  }, [phase, current.targetSelector]);
+
+  useEffect(() => {
+    measureTarget();
+    window.addEventListener('resize', measureTarget);
+    window.addEventListener('scroll', measureTarget, true);
+    return () => {
+      window.removeEventListener('resize', measureTarget);
+      window.removeEventListener('scroll', measureTarget, true);
+    };
+  }, [measureTarget]);
+
+  const finishTour = () => {
     if (isReplay && existingUsername && existingUsername.trim().length >= 2) {
       onComplete({ username: existingUsername, onboardingCompleted: true });
       return;
     }
-    setStep('username');
+    setPhase('username');
   };
 
   const handleUsernameSubmit = async (e: React.FormEvent) => {
@@ -138,195 +159,228 @@ export const OnboardingExperience: React.FC<OnboardingExperienceProps> = ({
     }
   };
 
-  const previewGreeting =
-    username.replace(/[<>&"'`]/g, '').trim() || 'Moss';
+  const previewGreeting = username.replace(/[<>&"'`]/g, '').trim() || 'Moss';
 
-  return (
-    <div className="surf-app-shell flex h-screen w-screen items-center justify-center bg-[#09090b] p-6 text-zinc-100">
-      <div className="w-full max-w-2xl overflow-hidden rounded-lg border border-white/[0.1] bg-[#101116] p-7 shadow-2xl transition-all duration-300">
-        {step === 'slides' ? (
-          <div className="space-y-6">
-            {/* Top Bar */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <span className="font-mono text-xs font-semibold text-zinc-200">
-                  Surf Monitor
-                </span>
-                <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] text-emerald-300">
-                  v4.2.0
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => void finishSlides()}
-                className="rounded border border-white/[0.1] px-2.5 py-1 font-mono text-[11px] text-zinc-400 transition-colors hover:bg-white/[0.05] hover:text-zinc-100"
-              >
-                Skip Introduction
-              </button>
+  if (typeof document === 'undefined') return null;
+
+  // Compute tooltip card coordinates anchored near the spotlighted element
+  let cardStyle: React.CSSProperties = {
+    position: 'fixed',
+    top: '50%',
+    left: '50%',
+    transform: 'translate(-50%, -50%)',
+    zIndex: 10001,
+  };
+  let arrowDir: 'left' | 'top' | 'none' = 'none';
+
+  if (phase === 'tour' && rect) {
+    if (current.placement === 'right') {
+      cardStyle = {
+        position: 'fixed',
+        top: `${Math.min(window.innerHeight - 250, Math.max(16, rect.top - 16))}px`,
+        left: `${Math.min(window.innerWidth - 380, rect.right + 16)}px`,
+        zIndex: 10001,
+      };
+      arrowDir = 'left';
+    } else if (current.placement === 'bottom') {
+      cardStyle = {
+        position: 'fixed',
+        top: `${Math.min(window.innerHeight - 240, rect.bottom + 14)}px`,
+        left: `${Math.min(
+          window.innerWidth - 380,
+          Math.max(16, rect.left + rect.width / 2 - 180)
+        )}px`,
+        zIndex: 10001,
+      };
+      arrowDir = 'top';
+    }
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[10000]">
+      {/* Spotlight Cutout or Full Backdrop */}
+      {phase === 'tour' && rect ? (
+        <div
+          style={{
+            position: 'fixed',
+            top: `${rect.top - 5}px`,
+            left: `${rect.left - 5}px`,
+            width: `${rect.width + 10}px`,
+            height: `${rect.height + 10}px`,
+            borderRadius: '8px',
+            boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.72)',
+            border: '2px solid #10b981',
+            pointerEvents: 'none',
+            transition: 'all 260ms cubic-bezier(0.22, 1, 0.36, 1)',
+            zIndex: 10000,
+          }}
+        />
+      ) : (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.72)',
+            backdropFilter: 'blur(3px)',
+            zIndex: 10000,
+          }}
+        />
+      )}
+
+      {phase === 'tour' ? (
+        <div
+          style={cardStyle}
+          className="w-[360px] max-w-[calc(100vw-24px)] rounded-lg border border-emerald-500/35 bg-[#111216] p-5 text-zinc-100 shadow-2xl transition-all duration-200"
+        >
+          {arrowDir === 'left' && (
+            <div className="absolute -left-2 top-6 h-3.5 w-3.5 rotate-45 border-b border-l border-emerald-500/35 bg-[#111216]" />
+          )}
+          {arrowDir === 'top' && (
+            <div className="absolute -top-2 left-1/2 h-3.5 w-3.5 -translate-x-1/2 rotate-45 border-l border-t border-emerald-500/35 bg-[#111216]" />
+          )}
+
+          <div className="flex items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1 rounded border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] text-emerald-300">
+              <Sparkles className="h-3 w-3" />
+              {current.badge}
+            </span>
+            <button
+              type="button"
+              onClick={finishTour}
+              className="flex items-center gap-1 font-mono text-[11px] text-zinc-400 hover:text-zinc-100"
+            >
+              Skip
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+
+          <h2 className="mt-3 text-base font-semibold text-zinc-100">
+            {current.title}
+          </h2>
+          <p className="mt-1.5 text-xs leading-relaxed text-zinc-300">
+            {current.description}
+          </p>
+
+          <div className="mt-4 flex items-center justify-between border-t border-white/[0.08] pt-3">
+            <div className="flex items-center gap-1.5">
+              {TOUR_STEPS.map((s, i) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  aria-label={`Step ${i + 1}`}
+                  onClick={() => setStepIdx(i)}
+                  className={`h-1.5 rounded-full transition-all ${
+                    i === stepIdx ? 'w-5 bg-emerald-500' : 'w-1.5 bg-white/20'
+                  }`}
+                />
+              ))}
+              <span className="ml-1.5 font-mono text-[10px] text-zinc-500">
+                {stepIdx + 1}/{TOUR_STEPS.length}
+              </span>
             </div>
 
-            {/* Slide Content */}
-            <div key={currentSlide.id} className="space-y-4 py-2 transition-opacity duration-200">
-              <div className="flex items-center gap-3">
-                <div
-                  className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border ${currentSlide.accent}`}
+            <div className="flex items-center gap-1.5">
+              {stepIdx > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setStepIdx((i) => Math.max(0, i - 1))}
+                  className="flex items-center gap-1 rounded border border-white/[0.1] px-2.5 py-1 text-xs text-zinc-300 hover:bg-white/[0.05]"
                 >
-                  <SlideIcon className="h-5 w-5" />
-                </div>
-                <div>
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-500">
-                    {currentSlide.badge}
-                  </span>
-                  <h1 className="text-xl font-semibold tracking-tight text-zinc-100">
-                    {currentSlide.title}
-                  </h1>
-                </div>
-              </div>
-
-              <p className="text-sm leading-relaxed text-zinc-300">
-                {currentSlide.description}
-              </p>
-
-              <ul className="space-y-2 rounded border border-white/[0.08] bg-[#09090b] p-4">
-                {currentSlide.highlights.map((h) => (
-                  <li key={h} className="flex items-start gap-2.5 text-xs text-zinc-300">
-                    <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-400" />
-                    <span>{h}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {/* Progress & Navigation */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/[0.08] pt-4">
-              <div className="flex items-center gap-2">
-                {SLIDES.map((s, idx) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    aria-label={`Go to slide ${idx + 1}`}
-                    onClick={() => setSlideIdx(idx)}
-                    className={`h-2 rounded-full transition-all ${
-                      idx === slideIdx
-                        ? 'w-6 bg-emerald-500'
-                        : 'w-2 bg-white/[0.15] hover:bg-white/[0.3]'
-                    }`}
-                  />
-                ))}
-                <span className="ml-2 font-mono text-[11px] text-zinc-500">
-                  {slideIdx + 1} / {SLIDES.length}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {slideIdx > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setSlideIdx((i) => Math.max(0, i - 1))}
-                    className="flex items-center gap-1.5 rounded border border-white/[0.1] px-3.5 py-2 text-xs text-zinc-300 hover:bg-white/[0.05]"
-                  >
-                    <ArrowLeft className="h-3.5 w-3.5" />
-                    Previous
-                  </button>
-                )}
-                {!isLastSlide ? (
-                  <button
-                    type="button"
-                    onClick={() => setSlideIdx((i) => Math.min(SLIDES.length - 1, i + 1))}
-                    className="flex items-center gap-1.5 rounded bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500"
-                  >
-                    Next
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => void finishSlides()}
-                    className="flex items-center gap-1.5 rounded bg-emerald-600 px-4 py-2 text-xs font-semibold text-white hover:bg-emerald-500"
-                  >
-                    Get Started
-                    <ArrowRight className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
+                  <ArrowLeft className="h-3 w-3" />
+                  Prev
+                </button>
+              )}
+              {stepIdx < TOUR_STEPS.length - 1 ? (
+                <button
+                  type="button"
+                  onClick={() => setStepIdx((i) => Math.min(TOUR_STEPS.length - 1, i + 1))}
+                  className="flex items-center gap-1 rounded bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-500"
+                >
+                  Next
+                  <ArrowRight className="h-3 w-3" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={finishTour}
+                  className="flex items-center gap-1 rounded bg-emerald-600 px-3 py-1 text-xs font-semibold text-white hover:bg-emerald-500"
+                >
+                  <CheckCircle2 className="h-3 w-3" />
+                  Get Started
+                </button>
+              )}
             </div>
           </div>
-        ) : (
-          <form onSubmit={handleUsernameSubmit} className="space-y-5">
-            <div>
-              <span className="font-mono text-[10px] uppercase tracking-wider text-emerald-400">
-                Personalize Your Workspace
-              </span>
-              <h1 className="mt-1 text-xl font-semibold text-zinc-100">
-                Before we get started, what should we call you?
-              </h1>
-              <p className="mt-1 text-xs text-zinc-400">
-                This stays 100% local on your device. You can change it anytime in Settings.
-              </p>
-            </div>
+        </div>
+      ) : (
+        <form
+          onSubmit={handleUsernameSubmit}
+          style={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            zIndex: 10001,
+          }}
+          className="w-full max-w-md rounded-lg border border-white/[0.12] bg-[#111216] p-6 text-zinc-100 shadow-2xl"
+        >
+          <span className="font-mono text-[10px] uppercase tracking-wider text-emerald-400">
+            Personalize Your Workspace
+          </span>
+          <h2 className="mt-1 text-lg font-semibold text-zinc-100">
+            Before we get started, what should we call you?
+          </h2>
+          <p className="mt-1 text-xs text-zinc-400">
+            Stored locally on your machine. You can change this anytime in Settings.
+          </p>
 
-            <div>
-              <label
-                htmlFor="onboarding-username"
-                className="mb-1.5 block font-mono text-[11px] text-zinc-400"
-              >
-                Your Name or Handle
-              </label>
-              <div className="relative">
-                <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
-                <input
-                  id="onboarding-username"
-                  type="text"
-                  maxLength={32}
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  placeholder="Enter your name (e.g. Moss)"
-                  autoFocus
-                  className="w-full rounded border border-white/[0.12] bg-[#09090b] py-2.5 pl-9 pr-3 text-sm text-zinc-100 placeholder-zinc-600 focus:border-emerald-500/60 focus:outline-none"
-                />
-              </div>
-            </div>
+          <div className="relative mt-4">
+            <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-zinc-500" />
+            <input
+              type="text"
+              maxLength={32}
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Enter your name (e.g. Moss)"
+              autoFocus
+              className="w-full rounded border border-white/[0.12] bg-[#09090b] py-2.5 pl-9 pr-3 text-sm text-zinc-100 placeholder-zinc-600 focus:border-emerald-500/60 focus:outline-none"
+            />
+          </div>
 
-            {/* Live Greeting Preview */}
-            <div className="flex items-center justify-between rounded border border-white/[0.08] bg-[#09090b] px-4 py-3">
-              <span className="font-mono text-[11px] text-zinc-500">
-                Toolbar Greeting Preview
-              </span>
-              <span className="inline-flex items-center gap-2 rounded border border-white/[0.1] bg-[#101114] px-2.5 py-1 text-xs font-medium text-zinc-100">
-                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500/20 font-mono text-[9px] font-bold text-emerald-300">
-                  {previewGreeting[0].toUpperCase()}
-                </span>
-                Hello, {previewGreeting}!
-              </span>
-            </div>
+          <div className="mt-3 flex items-center justify-between rounded border border-white/[0.08] bg-[#09090b] px-3 py-2">
+            <span className="font-mono text-[11px] text-zinc-500">Preview</span>
+            <span className="font-mono text-xs font-semibold text-emerald-400">
+              Hello, {previewGreeting}!
+            </span>
+          </div>
 
-            {error && (
-              <div className="rounded border border-rose-500/30 bg-rose-500/10 px-3 py-2 font-mono text-xs text-rose-400">
-                {error}
-              </div>
-            )}
-
-            <div className="flex items-center justify-between border-t border-white/[0.08] pt-4">
-              <button
-                type="button"
-                onClick={() => setStep('slides')}
-                className="flex items-center gap-1.5 rounded border border-white/[0.1] px-3.5 py-2 text-xs text-zinc-300 hover:bg-white/[0.05]"
-              >
-                <ArrowLeft className="h-3.5 w-3.5" />
-                Back
-              </button>
-              <button
-                type="submit"
-                disabled={saving}
-                className="flex items-center gap-1.5 rounded bg-emerald-600 px-5 py-2 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
-              >
-                <span>{saving ? 'Saving...' : 'Continue'}</span>
-                <ArrowRight className="h-3.5 w-3.5" />
-              </button>
+          {error && (
+            <div className="mt-3 rounded border border-rose-500/30 bg-rose-500/10 px-3 py-2 font-mono text-xs text-rose-400">
+              {error}
             </div>
-          </form>
-        )}
-      </div>
-    </div>
+          )}
+
+          <div className="mt-5 flex items-center justify-between">
+            <button
+              type="button"
+              onClick={() => setPhase('tour')}
+              className="flex items-center gap-1 rounded border border-white/[0.1] px-3 py-1.5 text-xs text-zinc-300 hover:bg-white/[0.05]"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Back to Tour
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex items-center gap-1.5 rounded bg-emerald-600 px-4 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+            >
+              <span>{saving ? 'Saving...' : 'Continue'}</span>
+              <ArrowRight className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </form>
+      )}
+    </div>,
+    document.body
   );
 };

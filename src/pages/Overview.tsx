@@ -173,6 +173,7 @@ export const Overview: React.FC<OverviewProps> = ({
       {/* Compact 5-Column Horizontal KPI Strip */}
       <section
         aria-label="Key statistics"
+        data-tour="overview-kpis"
         className="grid grid-cols-2 divide-y divide-white/[0.08] overflow-hidden rounded border border-white/[0.08] bg-[#09090b] sm:grid-cols-3 md:grid-cols-5 md:divide-x md:divide-y-0"
       >
         <div className="px-4 py-3">

@@ -269,6 +269,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Add Monitor CTA */}
         <button
           type="button"
+          data-tour="header-add-monitor"
           onClick={onOpenAddMonitor}
           className="flex h-7 items-center gap-1.5 rounded bg-emerald-600 px-3 text-xs font-medium text-white transition-colors hover:bg-emerald-500"
         >
@@ -310,7 +311,7 @@ export const Header: React.FC<HeaderProps> = ({
                     className="font-mono text-[10px]"
                     style={{ color: 'var(--surf-text-muted, #71717a)' }}
                   >
-                    Local Workspace · v{userStats?.appVersion ?? '4.2.0'}
+                    Local Workspace · v{userStats?.appVersion ?? '4.2.1'}
                   </div>
                 </div>
               </div>

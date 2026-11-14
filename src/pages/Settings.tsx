@@ -379,41 +379,6 @@ export const Settings: React.FC<SettingsProps> = ({
                 Security, Privacy &amp; Backups
               </h2>
 
-              <div className="flex items-center justify-between rounded border border-white/[0.08] bg-[#101114] p-3.5">
-                <div>
-                  <div className="text-xs font-medium text-zinc-200">
-                    SunLicense Anonymous Analytics
-                  </div>
-                  <div className="text-[11px] text-zinc-500">
-                    Reports OS, architecture, and app version only. Respects{' '}
-                    <code>SUNLICENSE_ANALYTICS=off</code>.
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={licenseState?.analyticsEnabled ?? true}
-                  onClick={() =>
-                    void handleToggleAnalytics(
-                      !(licenseState?.analyticsEnabled ?? true)
-                    )
-                  }
-                  className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border transition-colors ${
-                    (licenseState?.analyticsEnabled ?? true)
-                      ? 'border-emerald-500/40 bg-emerald-600'
-                      : 'border-white/[0.1] bg-[#09090b]'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
-                      (licenseState?.analyticsEnabled ?? true)
-                        ? 'translate-x-4'
-                        : 'translate-x-0.5'
-                    }`}
-                  />
-                </button>
-              </div>
-
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -607,7 +572,7 @@ export const Settings: React.FC<SettingsProps> = ({
                 <div>
                   <div className="text-[10px] text-zinc-500">Version</div>
                   <div className="mt-0.5 text-zinc-200">
-                    {appInfo?.version ?? '4.2.0'}
+                    {appInfo?.version ?? '4.2.1'}
                   </div>
                 </div>
                 <div>
@@ -638,7 +603,7 @@ export const Settings: React.FC<SettingsProps> = ({
                     Welcome Introduction
                   </div>
                   <p className="mt-0.5 font-mono text-[11px] text-zinc-500">
-                    Replay the Surf Monitor v4.2.0 feature walkthrough without modifying your data.
+                    Replay the Surf Monitor v4.2.1 feature walkthrough without modifying your data.
                   </p>
                 </div>
                 <button

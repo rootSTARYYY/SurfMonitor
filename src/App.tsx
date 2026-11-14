@@ -247,7 +247,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const api = window.surfMonitorAPI;
     if (!api) {
-      setLicenseChecked(true);
+      setProfileLoaded(true);
       return;
     }
     void api.getThemeState?.().then((tState) => {
@@ -255,12 +255,33 @@ export const App: React.FC = () => {
       let defId: string | null = null;
       for (const rec of tState.themes ?? []) {
         try {
-          const parsed = validateAndMigrateTheme(JSON.parse(rec.themeJson));
+          const rawObj = JSON.parse(rec.themeJson) as Record<string, unknown>;
+          let parsed: SurfTheme;
+          try {
+            parsed = validateAndMigrateTheme(rawObj);
+          } catch {
+            const base = BUILT_IN_THEMES[0];
+            parsed = {
+              ...base,
+              ...(rawObj as Partial<SurfTheme>),
+              colors: { ...base.colors, ...((rawObj?.colors as Partial<SurfTheme['colors']>) ?? {}) },
+              typography: { ...base.typography, ...((rawObj?.typography as Partial<SurfTheme['typography']>) ?? {}) },
+              layout: { ...base.layout, ...((rawObj?.layout as Partial<SurfTheme['layout']>) ?? {}) },
+              components: { ...base.components, ...((rawObj?.components as Partial<SurfTheme['components']>) ?? {}) },
+              effects: { ...base.effects, ...((rawObj?.effects as Partial<SurfTheme['effects']>) ?? {}) },
+              background: { ...base.background, ...((rawObj?.background as Partial<SurfTheme['background']>) ?? {}) },
+              customCss: typeof rawObj?.customCss === 'string' ? rawObj.customCss : base.customCss,
+              builtIn: false,
+            };
+          }
           parsed.id = rec.id;
-          parsed.name = rec.name;
+          parsed.name = rec.name || parsed.name || 'Custom Theme';
+          parsed.builtIn = false;
           parsedCustom.push(parsed);
           if (rec.isDefault === 1) defId = rec.id;
-        } catch {}
+        } catch {
+          // ignore malformed JSON
+        }
       }
       setCustomThemes(parsedCustom);
       setDefaultThemeId(defId);
@@ -483,18 +504,9 @@ export const App: React.FC = () => {
     );
   }
 
-  if (replayingOnboarding || (window.surfMonitorAPI && userProfile && !userProfile.onboardingCompleted)) {
-    return (
-      <OnboardingExperience
-        existingUsername={userProfile?.username ?? null}
-        isReplay={replayingOnboarding}
-        onComplete={(next) => {
-          setUserProfile(next);
-          setReplayingOnboarding(false);
-        }}
-      />
-    );
-  }
+  const showOnboardingTour =
+    replayingOnboarding ||
+    Boolean(window.surfMonitorAPI && userProfile && !userProfile.onboardingCompleted);
 
   const degradedItems: DegradedSystemItem[] = [
     ...monitors
@@ -595,7 +607,7 @@ export const App: React.FC = () => {
             activeServers: remoteServers.filter((s) => s.connectionStatus === 'connected').length,
             totalServers: remoteServers.length,
             totalPm2Processes: pm2Count,
-            appVersion: '4.2.0',
+            appVersion: '4.2.1',
           }}
           onOpenProfileSettings={() => {
             setSettingsInitialTab('profile');
@@ -824,7 +836,10 @@ export const App: React.FC = () => {
                 initialTab={settingsInitialTab}
                 onUpdateSettings={setSettings}
                 onProfileUpdated={setUserProfile}
-                onReplayOnboarding={() => setReplayingOnboarding(true)}
+                onReplayOnboarding={() => {
+                  setActivePage('overview');
+                  setReplayingOnboarding(true);
+                }}
                 onResetDefaults={() => setSettings(DEFAULT_SETTINGS)}
                 themeStudio={{
                   activeTheme,
@@ -925,6 +940,17 @@ export const App: React.FC = () => {
           setToasts((prev) => prev.filter((t) => t.id !== id))
         }
       />
+
+      {showOnboardingTour && (
+        <OnboardingExperience
+          existingUsername={userProfile?.username ?? null}
+          isReplay={replayingOnboarding}
+          onComplete={(next) => {
+            setUserProfile(next);
+            setReplayingOnboarding(false);
+          }}
+        />
+      )}
     </div>
   );
 };

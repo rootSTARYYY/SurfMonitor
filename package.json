@@ -1,6 +1,6 @@
 {
   "name": "surf-monitor",
-  "version": "4.2.0",
+  "version": "4.2.1",
   "description": "Surf Monitor - Local-first website, infrastructure, SSH agent, PM2, Docker, and service monitoring suite",
   "main": "dist-electron/main.js",
   "author": "Surf Monitor",

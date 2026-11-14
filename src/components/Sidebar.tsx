@@ -213,6 +213,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <button
                     key={item.id}
                     type="button"
+                    data-tour={`nav-${item.id}`}
                     onClick={() => onNavigate(item.id)}
                     title={collapsed ? item.label : undefined}
                     className={`group flex w-full items-center justify-between rounded px-2.5 py-1.5 text-[13px] font-medium transition-colors ${
@@ -268,7 +269,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-500">
                   {allOperational ? 'System Health' : 'Degraded / Down Services'}
                 </span>
-                <span className="font-mono text-[10px] text-zinc-600">v4.2.0</span>
+                <span className="font-mono text-[10px] text-zinc-600">v4.2.1</span>
               </div>
               {allOperational ? (
                 <p className="px-1 py-1.5 font-mono text-[11px] text-emerald-400">
