@@ -331,80 +331,9 @@ export type SchedulerEventPayload =
 export type ThemePreference = 'dark' | 'midnight' | 'oled';
 
 
-export type LicenseStatus =
-  | 'ACTIVE'
-  | 'TRIAL_ACTIVE'
-  | 'TRIAL_EXPIRED'
-  | 'EXPIRED'
-  | 'REVOKED'
-  | 'SUSPENDED'
-  | 'INVALID'
-  | 'UNACTIVATED'
-  | 'OFFLINE_GRACE'
-  | 'RATE_LIMITED'
-  | 'CONFIG_ERROR';
-
-export interface EntitlementHistoryDTO {
-  id: number;
-  eventType: string;
-  status: string;
-  source: string;
-  details: string | null;
-  createdAt: string;
-}
-
-export interface PublicLicenseState {
-  status: LicenseStatus;
-  licensed: boolean;
-  isTrial: boolean;
+export interface UserProfileState {
   username: string | null;
-  maskedKey: string | null;
-  machineId: string;
-  productName: string | null;
-  planName: string | null;
-  activatedAt: string | null;
-  expiresAt: string | null;
-  lastValidatedAt: string | null;
-  lastAttemptAt: string | null;
-  lastResultCode: string | null;
-  offlineGraceUntil: string | null;
-  offlineGraceRemainingMs: number | null;
-  machinesUsed: number | null;
-  machinesLimit: number | null;
-  analyticsEnabled: boolean;
-  trialStartedAt: string | null;
-  trialExpiresAt: string | null;
-  trialRemainingMs: number | null;
-  trialServerEnforced: boolean;
-  clockTamperDetected: boolean;
-  discordInviteUrl: string;
-  history: EntitlementHistoryDTO[];
-  message: string | null;
-}
-
-export interface AppSettings {
-  theme: ThemePreference;
-  defaultIntervalSeconds: CheckIntervalSeconds;
-  defaultTimeoutSeconds: number;
-  launchOnStartup: boolean;
-  minimizeToTray: boolean;
-  retentionDays: number;
-}
-
-export interface NotificationItem {
-  id: string;
-  title: string;
-  message: string;
-  timestamp: string;
-  type: 'alert' | 'warning' | 'info';
-  read: boolean;
-}
-
-export interface ToastItem {
-  id: string;
-  title: string;
-  description?: string;
-  tone: 'success' | 'warning' | 'error' | 'info';
+  onboardingCompleted: boolean;
 }
 
 export interface ElectronAppInfo {
@@ -787,35 +716,6 @@ declare global {
       ) => Promise<unknown>;
       onRemoteEvent: (
         callback: (event: { serverId: string }) => void
-      ) => () => void;
-      getLicenseState: () => Promise<PublicLicenseState>;
-      activateLicense: (
-        key: string,
-        analyticsEnabled?: boolean,
-        username?: string
-      ) => Promise<PublicLicenseState>;
-      startTrial: (username: string) => Promise<PublicLicenseState>;
-      setUsername: (username: string) => Promise<PublicLicenseState>;
-      setDiscordInviteUrl: (url: string) => Promise<PublicLicenseState>;
-      validateLicenseNow: () => Promise<PublicLicenseState>;
-      clearLocalLicense: () => Promise<PublicLicenseState>;
-      setLicenseAnalytics: (enabled: boolean) => Promise<PublicLicenseState>;
-      getThemeState: () => Promise<{
-        activeThemeId: string;
-        themes: Array<{ id: string; name: string; themeJson: string; isDefault: number; createdAt: string; updatedAt: string }>;
-        safeMode: boolean;
-      }>;
-      saveCustomTheme: (input: { id: string; name: string; themeJson: string; isDefault?: boolean }) => Promise<{ id: string; name: string; themeJson: string; isDefault: number; createdAt: string; updatedAt: string }>;
-      deleteCustomTheme: (id: string) => Promise<boolean>;
-      setActiveThemeId: (id: string) => Promise<boolean>;
-      exportThemeFile: (defaultFileName: string, content: string) => Promise<string | null>;
-      importThemeFile: (kind?: 'json' | 'css') => Promise<string | null>;
-      pickThemeBgImage: () => Promise<string | null>;
-      getPersistedSettings: () => Promise<Record<string, unknown> | null>;
-      savePersistedSettings: (obj: Record<string, unknown>) => Promise<boolean>;
-      getStartupTimings: () => Promise<Record<string, number>>;
-      onLicenseUpdated: (
-        callback: (state: PublicLicenseState) => void
       ) => () => void;
       onMonitorEvent: (
         callback: (event: SchedulerEventPayload) => void

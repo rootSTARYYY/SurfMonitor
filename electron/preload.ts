@@ -147,44 +147,16 @@ const surfMonitorAPI = {
   ) =>
     ipcRenderer.invoke('servers:service-action', serverId, serviceName, action),
 
-  // Licensing & Settings (v2.2.0)
-  getLicenseState: () => ipcRenderer.invoke('license:get-state'),
-  activateLicense: (key: string, analyticsEnabled = true, username?: string) =>
-    ipcRenderer.invoke('license:activate', key, analyticsEnabled, username),
-  startTrial: (username: string) =>
-    ipcRenderer.invoke('trial:start', username),
+  // User Profile & Onboarding (v4.2.0)
+  getProfileState: () => ipcRenderer.invoke('profile:get-state'),
   setUsername: (username: string) =>
     ipcRenderer.invoke('profile:set-username', username),
-  setDiscordInviteUrl: (url: string) =>
-    ipcRenderer.invoke('license:set-discord-invite', url),
-  validateLicenseNow: () => ipcRenderer.invoke('license:validate-now'),
-  clearLocalLicense: () => ipcRenderer.invoke('license:clear-local'),
-  setLicenseAnalytics: (enabled: boolean) =>
-    ipcRenderer.invoke('license:set-analytics', enabled),
-  getThemeState: () => ipcRenderer.invoke('themes:get-state'),
-  saveCustomTheme: (input: { id: string; name: string; themeJson: string; isDefault?: boolean }) =>
-    ipcRenderer.invoke('themes:save', input),
-  deleteCustomTheme: (id: string) => ipcRenderer.invoke('themes:delete', id),
-  setActiveThemeId: (id: string) => ipcRenderer.invoke('themes:set-active', id),
-  exportThemeFile: (defaultFileName: string, content: string) =>
-    ipcRenderer.invoke('themes:export-file', defaultFileName, content),
-  importThemeFile: (kind?: 'json' | 'css') =>
-    ipcRenderer.invoke('themes:import-file', kind),
-  pickThemeBgImage: () => ipcRenderer.invoke('themes:pick-bg-image'),
+  completeOnboarding: (username?: string) =>
+    ipcRenderer.invoke('profile:complete-onboarding', username),
   getPersistedSettings: () => ipcRenderer.invoke('settings:get'),
   savePersistedSettings: (obj: Record<string, unknown>) =>
     ipcRenderer.invoke('settings:save', obj),
   getStartupTimings: () => ipcRenderer.invoke('startup:get-timings'),
-  onLicenseUpdated: (callback: (state: unknown) => void): (() => void) => {
-    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
-      callback(payload);
-    };
-    ipcRenderer.on('license:updated', listener);
-    return () => {
-      ipcRenderer.removeListener('license:updated', listener);
-    };
-  },
-
   onMonitorEvent: (callback: (event: unknown) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
       callback(payload);

@@ -2,16 +2,14 @@ import React, { useEffect, useState } from 'react';
 import {
   Activity,
   Bell,
-  Check,
-  Copy,
   Database,
   Download,
   HardDrive,
   Info,
-  KeyRound,
+  User,
+  Sparkles,
   Monitor,
   Palette,
-  RefreshCw,
   Search,
   Server,
   Shield,
@@ -23,20 +21,20 @@ import {
   AppSettings,
   CheckIntervalSeconds,
   ElectronAppInfo,
-  LicenseStatus,
-  PublicLicenseState,
+  UserProfileState,
 } from '@/types';
-import { formatDurationSeconds, formatTimestamp } from '@/utils/format';
+import { formatTimestamp } from '@/utils/format';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ThemeStudio } from '@/components/ThemeStudio';
 import { SurfTheme } from '@/theme/themeEngine';
 
 interface SettingsProps {
   settings: AppSettings;
-  licenseState: PublicLicenseState | null;
+  userProfile: UserProfileState | null;
   initialTab?: SettingsTab;
   onUpdateSettings: (next: AppSettings) => void;
-  onLicenseUpdated: (next: PublicLicenseState) => void;
+  onProfileUpdated: (next: UserProfileState) => void;
+  onReplayOnboarding: () => void;
   onResetDefaults: () => void;
   themeStudio?: {
     activeTheme: SurfTheme;
@@ -59,7 +57,7 @@ export type SettingsTab =
   | 'notifications'
   | 'servers'
   | 'security'
-  | 'license'
+  | 'profile'
   | 'advanced'
   | 'about';
 
@@ -75,36 +73,23 @@ const CATEGORIES: Array<{
   { id: 'notifications', label: 'Notifications', keywords: 'desktop alerts sound discord telegram email', icon: Bell },
   { id: 'servers', label: 'Servers & Agents', keywords: 'ssh agent polling remote', icon: Server },
   { id: 'security', label: 'Security & Privacy', keywords: 'database backup analytics privacy path', icon: Shield },
-  { id: 'license', label: 'License & Account', keywords: 'sunlicense key activation expiry grace machine', icon: KeyRound },
+  { id: 'profile', label: 'Profile', keywords: 'username greeting personalization account', icon: User },
   { id: 'advanced', label: 'Advanced', keywords: 'diagnostics startup timings export reset', icon: Terminal },
   { id: 'about', label: 'About Surf Monitor', keywords: 'version electron node build', icon: Info },
 ];
 
-const LICENSE_BADGE: Record<LicenseStatus, string> = {
-  ACTIVE: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400',
-  TRIAL_ACTIVE: 'border-sky-500/30 bg-sky-500/10 text-sky-300',
-  TRIAL_EXPIRED: 'border-rose-500/30 bg-rose-500/10 text-rose-400',
-  OFFLINE_GRACE: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
-  EXPIRED: 'border-rose-500/30 bg-rose-500/10 text-rose-400',
-  REVOKED: 'border-rose-500/30 bg-rose-500/10 text-rose-400',
-  SUSPENDED: 'border-rose-500/30 bg-rose-500/10 text-rose-400',
-  INVALID: 'border-rose-500/30 bg-rose-500/10 text-rose-400',
-  RATE_LIMITED: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
-  CONFIG_ERROR: 'border-rose-500/30 bg-rose-500/10 text-rose-400',
-  UNACTIVATED: 'border-white/[0.12] bg-white/[0.04] text-zinc-400',
-};
-
 export const Settings: React.FC<SettingsProps> = ({
   settings,
-  licenseState,
+  userProfile,
   initialTab = 'general',
   onUpdateSettings,
-  onLicenseUpdated,
+  onProfileUpdated,
+  onReplayOnboarding,
   onResetDefaults,
   themeStudio,
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
-  const [usernameInput, setUsernameInput] = useState(licenseState?.username ?? '');
+  const [usernameInput, setUsernameInput] = useState(userProfile?.username ?? '');
   const [search, setSearch] = useState('');
   const [appInfo, setAppInfo] = useState<ElectronAppInfo | null>(null);
   const [timings, setTimings] = useState<Record<string, number>>({});
@@ -112,21 +97,17 @@ export const Settings: React.FC<SettingsProps> = ({
     Array<{ id: string; filePath: string; sizeBytes: number; createdAt: string }>
   >([]);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
-  const [copiedFp, setCopiedFp] = useState(false);
 
-  const [newKeyInput, setNewKeyInput] = useState('');
-  const [validating, setValidating] = useState(false);
-  const [confirmClearLicense, setConfirmClearLicense] = useState(false);
 
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
 
   useEffect(() => {
-    if (licenseState?.username !== undefined) {
-      setUsernameInput(licenseState.username ?? '');
+    if (userProfile?.username !== undefined) {
+      setUsernameInput(userProfile.username ?? '');
     }
-  }, [licenseState?.username]);
+  }, [userProfile?.username]);
   const [confirmResetPrefs, setConfirmResetPrefs] = useState(false);
 
   useEffect(() => {
@@ -151,48 +132,6 @@ export const Settings: React.FC<SettingsProps> = ({
   ) => {
     onUpdateSettings({ ...settings, [key]: value });
     await window.surfMonitorAPI?.setDesktopPrefs({ [key]: value });
-  };
-
-  const handleValidateNow = async () => {
-    if (!window.surfMonitorAPI) return;
-    setValidating(true);
-    try {
-      const next = await window.surfMonitorAPI.validateLicenseNow();
-      onLicenseUpdated(next);
-      setStatusMsg(next.message ?? `Validation status: ${next.status}`);
-    } finally {
-      setValidating(false);
-    }
-  };
-
-  const handleReplaceKey = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newKeyInput.trim() || !window.surfMonitorAPI) return;
-    setValidating(true);
-    try {
-      const next = await window.surfMonitorAPI.activateLicense(
-        newKeyInput.trim(),
-        licenseState?.analyticsEnabled ?? true
-      );
-      onLicenseUpdated(next);
-      setNewKeyInput('');
-      setStatusMsg(next.message ?? `License status: ${next.status}`);
-    } finally {
-      setValidating(false);
-    }
-  };
-
-  const handleToggleAnalytics = async (enabled: boolean) => {
-    if (!window.surfMonitorAPI) return;
-    const next = await window.surfMonitorAPI.setLicenseAnalytics(enabled);
-    onLicenseUpdated(next);
-  };
-
-  const handleCopyFp = () => {
-    if (!licenseState?.machineId) return;
-    void navigator.clipboard.writeText(licenseState.machineId);
-    setCopiedFp(true);
-    setTimeout(() => setCopiedFp(false), 2000);
   };
 
   return (
@@ -522,12 +461,25 @@ export const Settings: React.FC<SettingsProps> = ({
             </div>
           )}
 
-          {activeTab === 'license' && (
+          {activeTab === 'profile' && (
             <div className="space-y-5">
-              {/* Account Profile */}
-              <div className="rounded border border-white/[0.08] bg-[#101114] p-4">
-                <div className="mb-2 text-xs font-semibold text-zinc-100">
-                  Account Profile
+              <div>
+                <h2 className="text-sm font-semibold text-zinc-100">
+                  Profile &amp; Personalization
+                </h2>
+                <p className="font-mono text-[11px] text-zinc-500">
+                  Stored locally in SQLite · No account or internet connection required
+                </p>
+              </div>
+
+              <div className="rounded border border-white/[0.08] bg-[#101114] p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold text-zinc-100">
+                    Display Name
+                  </span>
+                  <span className="rounded border border-white/[0.1] bg-[#09090b] px-2.5 py-1 font-mono text-xs text-emerald-400">
+                    Preview: Hello, {usernameInput.trim() || userProfile?.username || 'User'}!
+                  </span>
                 </div>
                 <form
                   onSubmit={async (e) => {
@@ -535,7 +487,7 @@ export const Settings: React.FC<SettingsProps> = ({
                     if (!window.surfMonitorAPI) return;
                     try {
                       const next = await window.surfMonitorAPI.setUsername(usernameInput);
-                      onLicenseUpdated(next);
+                      onProfileUpdated(next);
                       setStatusMsg('Username updated.');
                     } catch (err) {
                       setStatusMsg(err instanceof Error ? err.message : 'Invalid username');
@@ -548,204 +500,35 @@ export const Settings: React.FC<SettingsProps> = ({
                     maxLength={32}
                     value={usernameInput}
                     onChange={(e) => setUsernameInput(e.target.value)}
-                    placeholder="Enter username..."
+                    placeholder="Enter your username..."
                     className="min-w-[200px] flex-1 rounded border border-white/[0.1] bg-[#09090b] px-3 py-1.5 text-xs text-zinc-100 focus:outline-none"
                   />
                   <button
                     type="submit"
-                    className="rounded bg-emerald-600 px-3 py-1.5 font-mono text-xs font-medium text-white hover:bg-emerald-500"
+                    className="rounded bg-emerald-600 px-3.5 py-1.5 font-mono text-xs font-medium text-white hover:bg-emerald-500"
                   >
                     Save Username
                   </button>
                 </form>
               </div>
 
-              {/* Trial Information (when applicable) */}
-              {licenseState && (licenseState.isTrial || licenseState.trialStartedAt) && (
-                <div className="rounded border border-white/[0.08] bg-[#101114] p-4 font-mono text-xs">
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-xs font-semibold text-zinc-100 font-sans">
-                      7-Day Trial Status
-                    </span>
-                    <span className="text-[10px] text-zinc-400">
-                      {licenseState.trialServerEnforced ? 'Server Enforced' : 'Signed Local Anchor'}
-                      {licenseState.clockTamperDetected ? ' · Clock Tamper Flagged' : ''}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                    <div>
-                      <div className="text-[10px] text-zinc-500">Trial Start</div>
-                      <div className="mt-0.5 text-zinc-200">
-                        {formatTimestamp(licenseState.trialStartedAt)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-zinc-500">Trial Expiry</div>
-                      <div className="mt-0.5 text-zinc-200">
-                        {formatTimestamp(licenseState.trialExpiresAt)}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-zinc-500">Remaining</div>
-                      <div className="mt-0.5 text-amber-300">
-                        {licenseState.trialRemainingMs !== null
-                          ? formatDurationSeconds(Math.round(licenseState.trialRemainingMs / 1000))
-                          : '—'}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center justify-between rounded border border-white/[0.08] bg-[#101114] p-4">
                 <div>
-                  <h2 className="text-sm font-semibold text-zinc-100">
-                    License Management (SunLicense)
-                  </h2>
-                  <p className="font-mono text-[11px] text-zinc-500">
-                    Managed securely by Electron main process
+                  <div className="text-xs font-semibold text-zinc-100">
+                    Workspace Appearance
+                  </div>
+                  <p className="mt-0.5 font-mono text-[11px] text-zinc-500">
+                    Customize colors, typography, layout density, and custom CSS in Theme Studio.
                   </p>
                 </div>
-
-                {licenseState && (
-                  <span
-                    className={`rounded border px-2.5 py-1 font-mono text-xs font-semibold ${LICENSE_BADGE[licenseState.status]}`}
-                  >
-                    {licenseState.status}
-                  </span>
-                )}
-              </div>
-
-              {licenseState && (
-                <div className="grid grid-cols-2 gap-3 rounded border border-white/[0.08] bg-[#101114] p-4 font-mono text-xs sm:grid-cols-3">
-                  <div>
-                    <div className="text-[10px] text-zinc-500">Product</div>
-                    <div className="mt-0.5 text-zinc-200">
-                      {licenseState.productName ?? 'Surf Monitor'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-zinc-500">Plan</div>
-                    <div className="mt-0.5 text-zinc-200">
-                      {licenseState.planName ?? '—'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-zinc-500">License Key</div>
-                    <div className="mt-0.5 text-zinc-200">
-                      {licenseState.maskedKey ?? 'Not activated'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-zinc-500">
-                      Machine Usage
-                    </div>
-                    <div className="mt-0.5 text-zinc-200">
-                      {licenseState.machinesUsed !== null &&
-                      licenseState.machinesLimit !== null
-                        ? `${licenseState.machinesUsed}/${licenseState.machinesLimit}`
-                        : '—'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-zinc-500">
-                      Activated At
-                    </div>
-                    <div className="mt-0.5 text-zinc-300">
-                      {formatTimestamp(licenseState.activatedAt)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-zinc-500">Expires At</div>
-                    <div className="mt-0.5 text-zinc-300">
-                      {formatTimestamp(licenseState.expiresAt)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-zinc-500">
-                      Last Validated
-                    </div>
-                    <div className="mt-0.5 text-zinc-300">
-                      {formatTimestamp(licenseState.lastValidatedAt)}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-zinc-500">
-                      Last Result Code
-                    </div>
-                    <div className="mt-0.5 text-zinc-300">
-                      {licenseState.lastResultCode ?? '—'}
-                    </div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] text-zinc-500">
-                      Offline Grace Remaining
-                    </div>
-                    <div className="mt-0.5 text-amber-300">
-                      {licenseState.offlineGraceRemainingMs !== null
-                        ? formatDurationSeconds(
-                            Math.round(
-                              licenseState.offlineGraceRemainingMs / 1000
-                            )
-                          )
-                        : '—'}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  disabled={validating}
-                  onClick={() => void handleValidateNow()}
-                  className="flex items-center gap-1.5 rounded bg-emerald-600 px-3 py-1.5 font-mono text-xs text-white hover:bg-emerald-500 disabled:opacity-50"
+                  onClick={() => setActiveTab('appearance')}
+                  className="rounded border border-white/[0.12] bg-[#09090b] px-3 py-1.5 font-mono text-xs text-zinc-200 hover:bg-white/[0.05]"
                 >
-                  <RefreshCw
-                    className={`h-3.5 w-3.5 ${validating ? 'animate-spin' : ''}`}
-                  />
-                  Validate Now
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCopyFp}
-                  className="flex items-center gap-1.5 rounded border border-white/[0.1] bg-[#101114] px-3 py-1.5 font-mono text-xs text-zinc-300"
-                >
-                  {copiedFp ? (
-                    <Check className="h-3.5 w-3.5 text-emerald-400" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                  {copiedFp ? 'Copied Fingerprint' : 'Copy Machine Fingerprint'}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setConfirmClearLicense(true)}
-                  className="rounded border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 font-mono text-xs text-rose-400 hover:bg-rose-500/20"
-                >
-                  Clear Local Activation
+                  Open Theme Studio
                 </button>
               </div>
-
-              <form
-                onSubmit={handleReplaceKey}
-                className="flex flex-wrap items-center gap-2 border-t border-white/[0.08] pt-4"
-              >
-                <input
-                  type="password"
-                  value={newKeyInput}
-                  onChange={(e) => setNewKeyInput(e.target.value)}
-                  placeholder="Enter new license key to replace..."
-                  className="min-w-[240px] flex-1 rounded border border-white/[0.1] bg-[#101114] px-3 py-1.5 font-mono text-xs text-zinc-100 focus:outline-none"
-                />
-                <button
-                  type="submit"
-                  disabled={validating}
-                  className="rounded border border-white/[0.12] bg-[#101114] px-3 py-1.5 font-mono text-xs text-zinc-200 hover:bg-white/[0.05]"
-                >
-                  Replace License Key
-                </button>
-              </form>
             </div>
           )}
 
@@ -768,9 +551,9 @@ export const Settings: React.FC<SettingsProps> = ({
                   </div>
                 </div>
                 <div>
-                  <div className="text-[10px] text-zinc-500">License Cache</div>
+                  <div className="text-[10px] text-zinc-500">Profile Load</div>
                   <div className="mt-0.5 text-zinc-200">
-                    {timings.licenseCheckMs ?? '—'} ms
+                    {timings.profileLoadMs ?? '—'} ms
                   </div>
                 </div>
                 <div>
@@ -824,7 +607,7 @@ export const Settings: React.FC<SettingsProps> = ({
                 <div>
                   <div className="text-[10px] text-zinc-500">Version</div>
                   <div className="mt-0.5 text-zinc-200">
-                    {appInfo?.version ?? '2.2.0'}
+                    {appInfo?.version ?? '4.2.0'}
                   </div>
                 </div>
                 <div>
@@ -848,23 +631,30 @@ export const Settings: React.FC<SettingsProps> = ({
                   </div>
                 </div>
               </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded border border-white/[0.08] bg-[#101114] p-4">
+                <div>
+                  <div className="text-xs font-semibold text-zinc-100">
+                    Welcome Introduction
+                  </div>
+                  <p className="mt-0.5 font-mono text-[11px] text-zinc-500">
+                    Replay the Surf Monitor v4.2.0 feature walkthrough without modifying your data.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={onReplayOnboarding}
+                  className="flex items-center gap-1.5 rounded border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 font-mono text-xs text-emerald-300 hover:bg-emerald-500/20"
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Replay Introduction
+                </button>
+              </div>
             </div>
           )}
         </div>
       </div>
 
-      <ConfirmDialog
-        isOpen={confirmClearLicense}
-        title="Clear Local Device Activation"
-        description="This removes the encrypted license activation from this Windows device and returns to the activation screen. To free a remote machine slot, manage machines in your SunLicense Dashboard."
-        confirmLabel="Clear Activation"
-        onConfirm={async () => {
-          setConfirmClearLicense(false);
-          const next = await window.surfMonitorAPI?.clearLocalLicense();
-          if (next) onLicenseUpdated(next);
-        }}
-        onCancel={() => setConfirmClearLicense(false)}
-      />
 
       <ConfirmDialog
         isOpen={confirmResetPrefs}

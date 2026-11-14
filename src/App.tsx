@@ -13,7 +13,7 @@ import {
   NotificationHistoryDTO,
   NotificationItem,
   OverviewPayload,
-  PublicLicenseState,
+  UserProfileState,
   RemoteServerDTO,
   PageId,
   SchedulerEventPayload,
@@ -25,7 +25,7 @@ import { DegradedSystemItem, Sidebar } from '@/components/Sidebar';
 import { Header } from '@/components/Header';
 import { AddMonitorModal } from '@/components/AddMonitorModal';
 import { AddServerModal } from '@/components/AddServerModal';
-import { ActivationScreen } from '@/components/ActivationScreen';
+import { OnboardingExperience } from '@/components/OnboardingExperience';
 import { ToastContainer } from '@/components/ToastContainer';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Overview } from '@/pages/Overview';
@@ -87,8 +87,9 @@ export const App: React.FC = () => {
   const [editingServer, setEditingServer] = useState<RemoteServerDTO | null>(null);
   const [selectedPm2Target, setSelectedPm2Target] = useState<{ serverId: string; processKey: string } | null>(null);
   const [pm2Count, setPm2Count] = useState(0);
-  const [licenseState, setLicenseState] = useState<PublicLicenseState | null>(null);
-  const [licenseChecked, setLicenseChecked] = useState(false);
+  const [userProfile, setUserProfile] = useState<UserProfileState | null>(null);
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  const [replayingOnboarding, setReplayingOnboarding] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>('general');
   const [activeTheme, setActiveTheme] = useState<SurfTheme>(BUILT_IN_THEMES[0]);
@@ -269,34 +270,30 @@ export const App: React.FC = () => {
       setActiveTheme(found);
       applyThemeToDocument(found, Boolean(tState.safeMode));
     });
-    void api.getLicenseState().then((st) => {
-      setLicenseState(st);
-      setLicenseChecked(true);
+    void api.getProfileState().then((prof) => {
+      setUserProfile(prof);
+      setProfileLoaded(true);
     });
     void api.getPersistedSettings().then((saved) => {
       if (saved) {
         setSettings((prev) => ({ ...prev, ...(saved as Partial<AppSettings>) }));
       }
     });
-    const unsubLic = api.onLicenseUpdated((st) => {
-      setLicenseState(st);
-    });
-    return () => unsubLic();
   }, []);
 
   useEffect(() => {
-    if (!licenseChecked || !licenseState?.licensed) return;
+    
     void refreshCoreData();
-  }, [licenseChecked, licenseState?.licensed, refreshCoreData]);
+  }, [refreshCoreData]);
 
   useEffect(() => {
-    if (licenseState?.licensed && activePage === 'monitor-detail' && selectedMonitorId) {
+    if (activePage === 'monitor-detail' && selectedMonitorId) {
       void refreshDetail(selectedMonitorId, detailRange);
     }
   }, [activePage, selectedMonitorId, detailRange, refreshDetail]);
 
   useEffect(() => {
-    if (licenseState?.licensed && activePage === 'reports') {
+    if (activePage === 'reports') {
       void refreshAnalytics(analyticsRange);
     }
   }, [activePage, analyticsRange, refreshAnalytics]);
@@ -321,7 +318,7 @@ export const App: React.FC = () => {
         }
       }
 
-      if (licenseState?.licensed && activePage === 'reports') {
+      if (activePage === 'reports') {
         void refreshAnalytics(analyticsRange);
       }
 
@@ -478,19 +475,23 @@ export const App: React.FC = () => {
     applyThemeToDocument(draftTheme ?? activeTheme, themeSafeMode);
   }, [draftTheme, activeTheme, themeSafeMode]);
 
-  if (!licenseChecked) {
+  if (!profileLoaded) {
     return (
       <div className="flex h-screen w-screen items-center justify-center bg-[#09090b] font-mono text-xs text-zinc-500">
-        Verifying license state...
+        Loading Surf Monitor...
       </div>
     );
   }
 
-  if (window.surfMonitorAPI && licenseState && !licenseState.licensed) {
+  if (replayingOnboarding || (window.surfMonitorAPI && userProfile && !userProfile.onboardingCompleted)) {
     return (
-      <ActivationScreen
-        licenseState={licenseState}
-        onActivated={(next) => setLicenseState(next)}
+      <OnboardingExperience
+        existingUsername={userProfile?.username ?? null}
+        isReplay={replayingOnboarding}
+        onComplete={(next) => {
+          setUserProfile(next);
+          setReplayingOnboarding(false);
+        }}
       />
     );
   }
@@ -586,17 +587,18 @@ export const App: React.FC = () => {
           onMarkAllNotificationsRead={() =>
             setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
           }
-          licenseState={licenseState}
+          userProfile={userProfile}
           userStats={{
             totalMonitors: monitors.length,
-            activeMonitors: monitors.filter((m) => m.enabled).length,
-            downMonitors: monitors.filter((m) => m.status === 'DOWN').length,
-            registeredServers: remoteServers.length,
+            operationalMonitors: monitors.filter((m) => m.status === 'UP').length,
+            issueMonitors: monitors.filter((m) => m.status === 'DOWN' || m.status === 'DEGRADED').length,
+            activeServers: remoteServers.filter((s) => s.connectionStatus === 'connected').length,
+            totalServers: remoteServers.length,
             totalPm2Processes: pm2Count,
-            appVersion: '4.1.0',
+            appVersion: '4.2.0',
           }}
-          onManageLicense={() => {
-            setSettingsInitialTab('license');
+          onOpenProfileSettings={() => {
+            setSettingsInitialTab('profile');
             handleNavigate('settings');
           }}
         />
@@ -818,10 +820,11 @@ export const App: React.FC = () => {
             {activePage === 'settings' && (
               <Settings
                 settings={settings}
-                licenseState={licenseState}
+                userProfile={userProfile}
                 initialTab={settingsInitialTab}
                 onUpdateSettings={setSettings}
-                onLicenseUpdated={setLicenseState}
+                onProfileUpdated={setUserProfile}
+                onReplayOnboarding={() => setReplayingOnboarding(true)}
                 onResetDefaults={() => setSettings(DEFAULT_SETTINGS)}
                 themeStudio={{
                   activeTheme,

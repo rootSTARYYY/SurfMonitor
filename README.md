@@ -2,7 +2,7 @@
   <img src="build/icon.png" alt="Surf Monitor Logo" width="72" />
 </p>
 
-<h1 align="center">Surf Monitor (v4.1.0)</h1>
+<h1 align="center">Surf Monitor (v4.2.0)</h1>
 
 <p align="center">
   A local-first Windows desktop infrastructure, website, and remote Linux VPS monitoring suite built with <strong>Electron 33</strong>, <strong>React 18</strong>, <strong>TypeScript</strong>, <strong>Vite</strong>, <strong>Tailwind CSS</strong>, <strong>Recharts</strong>, and <strong>SQLite (<code>better-sqlite3</code>)</strong>.
@@ -34,7 +34,7 @@
 - **SMTP Provider Presets**: Built-in presets for **Brevo** (`smtp-relay.brevo.com:587`), **Gmail** (`smtp.gmail.com:587`), **Outlook / Office 365** (`smtp.office365.com:587`), and **Custom SMTP**, supporting `STARTTLS`, `Implicit TLS/SSL` (port 465), unauthenticated relays, **Test Connection**, and **Send Test Email**.
 
 ### Licensing & Desktop Integration
-- **SunLicense SDK Integration** ([SunLicense Docs](https://docs.sunlicense.com/how-to/)): Hardware-bound activation (`machineId()`), 7-day offline grace cache, rate-limit handling, and opt-out runtime diagnostics.
+- **100% Free & Local-First**: No license keys, trials, or external accounts required—with a 5-slide first-launch introduction and personalized greeting.
 - **Native Splash & System Tray**: 10-stage startup progress splash screen, Windows AppUserModelId notification identity (`com.surfmonitor.app`), minimize-to-tray, WAL backups, and JSON/CSV exports.
 
 ---
@@ -88,9 +88,6 @@ npm run dev
 
 > **Note:** `postinstall` runs `electron-builder install-app-deps` to compile `better-sqlite3` for Electron. If you switch Node or Electron versions, run `npm run rebuild`.
 
-### Optional Environment Variables
-- `SUNLICENSE_API_KEY`: Override the default validate-only `slk_...` key for local development.
-- `SUNLICENSE_ANALYTICS=off`: Disable anonymous runtime diagnostics.
 
 ---
 
@@ -100,4 +97,4 @@ npm run dev
 npm run build:win
 ```
 
-Outputs the NSIS installer (`Surf Monitor-Setup-4.1.0.exe`) into `release\`, using `build\icon.ico` and `build\icon.png`.
+Outputs the NSIS installer (`Surf Monitor-Setup-4.2.0.exe`) into `release\`, using `build\icon.ico` and `build\icon.png`.
