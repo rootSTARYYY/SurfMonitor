@@ -1475,6 +1475,81 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('startup:get-timings', () => startupTimings);
 
+  // --- Theme Studio (v4.1.0+) ---
+  ipcMain.handle('themes:get-state', () => {
+    if (!db) return { themes: [], activeThemeId: 'preset-dark', safeMode: false };
+    return {
+      themes: db.getCustomThemes(),
+      activeThemeId: db.getActiveThemeId(),
+      safeMode: db.getAppSetting('theme_safe_mode') === '1',
+    };
+  });
+
+  ipcMain.handle(
+    'themes:save',
+    (_event, input: { id: string; name: string; themeJson: string; isDefault?: boolean }) => {
+      if (!db) throw new Error('Database not initialized');
+      return db.saveCustomTheme(input);
+    }
+  );
+
+  ipcMain.handle('themes:delete', (_event, id: string) => {
+    return db ? db.deleteCustomTheme(id) : false;
+  });
+
+  ipcMain.handle('themes:set-active', (_event, id: string) => {
+    if (!db) return false;
+    db.setActiveThemeId(id);
+    return true;
+  });
+
+  ipcMain.handle('themes:set-safe-mode', (_event, enabled: boolean) => {
+    if (!db) return false;
+    db.setAppSetting('theme_safe_mode', enabled ? '1' : '0');
+    return true;
+  });
+
+  ipcMain.handle(
+    'themes:export-file',
+    async (_event, defaultFilename: string, content: string) => {
+      const res = await dialog.showSaveDialog({
+        defaultPath: defaultFilename,
+        filters: [
+          { name: 'Theme / CSS', extensions: ['json', 'css'] },
+          { name: 'All Files', extensions: ['*'] },
+        ],
+      });
+      if (res.canceled || !res.filePath) return null;
+      fs.writeFileSync(res.filePath, content, 'utf8');
+      return res.filePath;
+    }
+  );
+
+  ipcMain.handle('themes:import-file', async (_event, kind: 'json' | 'css') => {
+    const res = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters:
+        kind === 'css'
+          ? [{ name: 'CSS Stylesheet', extensions: ['css'] }]
+          : [{ name: 'Surf Theme JSON', extensions: ['json'] }],
+    });
+    if (res.canceled || res.filePaths.length === 0) return null;
+    return fs.readFileSync(res.filePaths[0], 'utf8');
+  });
+
+  ipcMain.handle('themes:pick-bg-image', async () => {
+    const res = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif'] }],
+    });
+    if (res.canceled || res.filePaths.length === 0) return null;
+    const fp = res.filePaths[0];
+    const ext = path.extname(fp).toLowerCase().replace('.', '') || 'png';
+    const mime = ext === 'jpg' ? 'image/jpeg' : `image/${ext}`;
+    const b64 = fs.readFileSync(fp).toString('base64');
+    return `data:${mime};base64,${b64}`;
+  });
+
   // --- Maintenance Windows ---
   ipcMain.handle('maintenance:list', () =>
     db?.getMaintenanceWindows() ?? []

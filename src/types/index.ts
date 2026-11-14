@@ -331,6 +331,46 @@ export type SchedulerEventPayload =
 export type ThemePreference = 'dark' | 'midnight' | 'oled';
 
 
+export interface AppSettings {
+  theme: ThemePreference;
+  defaultIntervalSeconds: number;
+  defaultTimeoutSeconds: number;
+  launchOnStartup: boolean;
+  minimizeToTray: boolean;
+  retentionDays: number;
+}
+
+export interface NotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  timestamp: string;
+  type: 'info' | 'warning' | 'alert';
+  read: boolean;
+}
+
+export interface ToastItem {
+  id: string;
+  title: string;
+  description?: string;
+  tone: 'success' | 'error' | 'warning' | 'info';
+}
+
+export interface CustomThemeRecord {
+  id: string;
+  name: string;
+  themeJson: string;
+  isDefault: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ThemeStatePayload {
+  themes: CustomThemeRecord[];
+  activeThemeId: string;
+  safeMode: boolean;
+}
+
 export interface UserProfileState {
   username: string | null;
   onboardingCompleted: boolean;
@@ -717,6 +757,25 @@ declare global {
       onRemoteEvent: (
         callback: (event: { serverId: string }) => void
       ) => () => void;
+      getProfileState: () => Promise<UserProfileState>;
+      setUsername: (username: string) => Promise<UserProfileState>;
+      completeOnboarding: (username?: string) => Promise<UserProfileState>;
+      getPersistedSettings: () => Promise<Record<string, unknown> | null>;
+      savePersistedSettings: (obj: Record<string, unknown>) => Promise<boolean>;
+      getStartupTimings: () => Promise<Record<string, number>>;
+      getThemeState: () => Promise<ThemeStatePayload>;
+      saveCustomTheme: (input: {
+        id: string;
+        name: string;
+        themeJson: string;
+        isDefault?: boolean;
+      }) => Promise<CustomThemeRecord>;
+      deleteCustomTheme: (id: string) => Promise<boolean>;
+      setActiveThemeId: (id: string) => Promise<boolean>;
+      setThemeSafeMode: (enabled: boolean) => Promise<boolean>;
+      exportThemeFile: (defaultFilename: string, content: string) => Promise<string | null>;
+      importThemeFile: (kind: 'json' | 'css') => Promise<string | null>;
+      pickThemeBgImage: () => Promise<string | null>;
       onMonitorEvent: (
         callback: (event: SchedulerEventPayload) => void
       ) => () => void;

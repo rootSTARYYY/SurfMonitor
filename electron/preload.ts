@@ -157,6 +157,17 @@ const surfMonitorAPI = {
   savePersistedSettings: (obj: Record<string, unknown>) =>
     ipcRenderer.invoke('settings:save', obj),
   getStartupTimings: () => ipcRenderer.invoke('startup:get-timings'),
+  getThemeState: () => ipcRenderer.invoke('themes:get-state'),
+  saveCustomTheme: (input: { id: string; name: string; themeJson: string; isDefault?: boolean }) =>
+    ipcRenderer.invoke('themes:save', input),
+  deleteCustomTheme: (id: string) => ipcRenderer.invoke('themes:delete', id),
+  setActiveThemeId: (id: string) => ipcRenderer.invoke('themes:set-active', id),
+  setThemeSafeMode: (enabled: boolean) => ipcRenderer.invoke('themes:set-safe-mode', enabled),
+  exportThemeFile: (defaultFilename: string, content: string) =>
+    ipcRenderer.invoke('themes:export-file', defaultFilename, content),
+  importThemeFile: (kind: 'json' | 'css') =>
+    ipcRenderer.invoke('themes:import-file', kind),
+  pickThemeBgImage: () => ipcRenderer.invoke('themes:pick-bg-image'),
   onMonitorEvent: (callback: (event: unknown) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
       callback(payload);

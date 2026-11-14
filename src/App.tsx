@@ -270,7 +270,13 @@ export const App: React.FC = () => {
               components: { ...base.components, ...((rawObj?.components as Partial<SurfTheme['components']>) ?? {}) },
               effects: { ...base.effects, ...((rawObj?.effects as Partial<SurfTheme['effects']>) ?? {}) },
               background: { ...base.background, ...((rawObj?.background as Partial<SurfTheme['background']>) ?? {}) },
-              customCss: typeof rawObj?.customCss === 'string' ? rawObj.customCss : base.customCss,
+              customCss:
+                typeof rawObj?.customCss === 'string'
+                  ? { enabled: rawObj.customCss.trim().length > 0, css: rawObj.customCss }
+                  : {
+                      ...base.customCss,
+                      ...((rawObj?.customCss as Partial<SurfTheme['customCss']>) ?? {}),
+                    },
               builtIn: false,
             };
           }
