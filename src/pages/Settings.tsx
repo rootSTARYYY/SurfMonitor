@@ -25,10 +25,11 @@ import {
   ElectronAppInfo,
   LicenseStatus,
   PublicLicenseState,
-  ThemePreference,
 } from '@/types';
 import { formatDurationSeconds, formatTimestamp } from '@/utils/format';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
+import { ThemeStudio } from '@/components/ThemeStudio';
+import { SurfTheme } from '@/theme/themeEngine';
 
 interface SettingsProps {
   settings: AppSettings;
@@ -37,6 +38,18 @@ interface SettingsProps {
   onUpdateSettings: (next: AppSettings) => void;
   onLicenseUpdated: (next: PublicLicenseState) => void;
   onResetDefaults: () => void;
+  themeStudio?: {
+    activeTheme: SurfTheme;
+    draftTheme: SurfTheme;
+    customThemes: SurfTheme[];
+    defaultThemeId: string | null;
+    safeMode: boolean;
+    onDraftChange: (next: SurfTheme) => void;
+    onApplyAndSave: (theme: SurfTheme, makeDefault?: boolean) => Promise<void>;
+    onSelectTheme: (theme: SurfTheme) => Promise<void>;
+    onDeleteCustomTheme: (id: string) => Promise<void>;
+    onCancelDraft: () => void;
+  };
 }
 
 export type SettingsTab =
@@ -88,6 +101,7 @@ export const Settings: React.FC<SettingsProps> = ({
   onUpdateSettings,
   onLicenseUpdated,
   onResetDefaults,
+  themeStudio,
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
   const [usernameInput, setUsernameInput] = useState(licenseState?.username ?? '');
@@ -314,39 +328,8 @@ export const Settings: React.FC<SettingsProps> = ({
             </div>
           )}
 
-          {activeTab === 'appearance' && (
-            <div className="space-y-4">
-              <h2 className="text-sm font-semibold text-zinc-100">
-                Appearance
-              </h2>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                {(
-                  [
-                    ['dark', 'Charcoal Dark', 'Default near-black surface'],
-                    ['midnight', 'Midnight Slate', 'Cooler slate contrast'],
-                    ['oled', 'OLED Black', 'Deepest pure black'],
-                  ] as Array<[ThemePreference, string, string]>
-                ).map(([val, label, desc]) => (
-                  <button
-                    key={val}
-                    type="button"
-                    onClick={() =>
-                      onUpdateSettings({ ...settings, theme: val })
-                    }
-                    className={`rounded border p-3 text-left ${
-                      settings.theme === val
-                        ? 'border-emerald-500/40 bg-emerald-500/10'
-                        : 'border-white/[0.08] bg-[#101114]'
-                    }`}
-                  >
-                    <div className="text-xs font-medium text-zinc-100">
-                      {label}
-                    </div>
-                    <div className="mt-1 text-[11px] text-zinc-500">{desc}</div>
-                  </button>
-                ))}
-              </div>
-            </div>
+          {activeTab === 'appearance' && themeStudio && (
+            <ThemeStudio {...themeStudio} />
           )}
 
           {activeTab === 'monitoring' && (

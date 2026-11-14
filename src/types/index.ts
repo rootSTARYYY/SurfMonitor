@@ -800,6 +800,17 @@ declare global {
       validateLicenseNow: () => Promise<PublicLicenseState>;
       clearLocalLicense: () => Promise<PublicLicenseState>;
       setLicenseAnalytics: (enabled: boolean) => Promise<PublicLicenseState>;
+      getThemeState: () => Promise<{
+        activeThemeId: string;
+        themes: Array<{ id: string; name: string; themeJson: string; isDefault: number; createdAt: string; updatedAt: string }>;
+        safeMode: boolean;
+      }>;
+      saveCustomTheme: (input: { id: string; name: string; themeJson: string; isDefault?: boolean }) => Promise<{ id: string; name: string; themeJson: string; isDefault: number; createdAt: string; updatedAt: string }>;
+      deleteCustomTheme: (id: string) => Promise<boolean>;
+      setActiveThemeId: (id: string) => Promise<boolean>;
+      exportThemeFile: (defaultFileName: string, content: string) => Promise<string | null>;
+      importThemeFile: (kind?: 'json' | 'css') => Promise<string | null>;
+      pickThemeBgImage: () => Promise<string | null>;
       getPersistedSettings: () => Promise<Record<string, unknown> | null>;
       savePersistedSettings: (obj: Record<string, unknown>) => Promise<boolean>;
       getStartupTimings: () => Promise<Record<string, number>>;

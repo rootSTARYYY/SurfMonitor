@@ -265,7 +265,7 @@ export const ActivationScreen: React.FC<ActivationScreenProps> = ({
                   Surf Monitor
                 </h1>
                 <span className="rounded border border-emerald-500/30 bg-emerald-500/10 px-1.5 py-0.5 font-mono text-[10px] text-emerald-300">
-                  v4.0.0
+                  v4.1.0
                 </span>
               </div>
               <p className="font-mono text-[11px] text-zinc-500">
