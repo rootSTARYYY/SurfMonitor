@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline';"
+    />
+    <title>Surf Monitor</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      body {
+        background: #09090b;
+        color: #f4f4f5;
+        font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 28px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        user-select: none;
+        overflow: hidden;
+      }
+      .top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .logo {
+        width: 38px;
+        height: 38px;
+        border-radius: 6px;
+        background: rgba(16, 185, 129, 0.12);
+        border: 1px solid rgba(16, 185, 129, 0.35);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+      }
+      .pulse {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #10b981;
+        animation: pulse 1.6s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { transform: scale(0.95); opacity: 0.7; }
+        50% { transform: scale(1.25); opacity: 1; }
+      }
+      .title {
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: -0.02em;
+      }
+      .subtitle {
+        font-size: 11px;
+        color: #71717a;
+        font-family: ui-monospace, monospace;
+      }
+      .version {
+        font-size: 11px;
+        color: #71717a;
+        font-family: ui-monospace, monospace;
+      }
+      .center {
+        margin-top: 24px;
+      }
+      .stage {
+        font-size: 12px;
+        color: #a1a1aa;
+        font-family: ui-monospace, monospace;
+        margin-bottom: 10px;
+      }
+      .bar-bg {
+        width: 100%;
+        height: 4px;
+        background: rgba(255, 255, 255, 0.07);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+      .bar-fill {
+        height: 100%;
+        width: 5%;
+        background: #10b981;
+        transition: width 180ms ease-out;
+      }
+      .footer {
+        display: flex;
+        justify-content: space-between;
+        font-size: 10px;
+        color: #52525b;
+        font-family: ui-monospace, monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="top">
+      <div class="brand">
+        <div class="logo"><div class="pulse"></div></div>
+        <div>
+          <div class="title">Surf Monitor</div>
+          <div class="subtitle">Infrastructure &amp; Uptime Suite</div>
+        </div>
+      </div>
+      <div class="version">v2.2.0</div>
+    </div>
+
+    <div class="center">
+      <div class="stage" id="stage">Starting Electron...</div>
+      <div class="bar-bg">
+        <div class="bar-fill" id="bar"></div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>Local-First SQLite Engine</span>
+      <span id="pct">5%</span>
+    </div>
+
+    <script>
+      if (window.splashAPI) {
+        window.splashAPI.onProgress((data) => {
+          document.getElementById('stage').textContent = data.stage;
+          document.getElementById('bar').style.width = data.percent + '%';
+          document.getElementById('pct').textContent = data.percent + '%';
+        });
+      }
+    </script>
+  </body>
+</html>
