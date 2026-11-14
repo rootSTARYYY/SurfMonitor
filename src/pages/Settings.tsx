@@ -572,7 +572,7 @@ export const Settings: React.FC<SettingsProps> = ({
                 <div>
                   <div className="text-[10px] text-zinc-500">Version</div>
                   <div className="mt-0.5 text-zinc-200">
-                    {appInfo?.version ?? '4.2.1'}
+                    {appInfo?.version ?? '4.2.2'}
                   </div>
                 </div>
                 <div>
@@ -603,7 +603,7 @@ export const Settings: React.FC<SettingsProps> = ({
                     Welcome Introduction
                   </div>
                   <p className="mt-0.5 font-mono text-[11px] text-zinc-500">
-                    Replay the Surf Monitor v4.2.1 feature walkthrough without modifying your data.
+                    Replay the Surf Monitor v4.2.2 feature walkthrough without modifying your data.
                   </p>
                 </div>
                 <button
