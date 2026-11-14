@@ -138,6 +138,10 @@
   border-color: var(--surf-border) !important;
 }
 
+.surf-app-shell aside[data-collapsed='true'] {
+  width: 64px !important;
+}
+
 .surf-app-shell header {
   background-color: var(--surf-toolbar-bg) !important;
   height: var(--surf-toolbar-height) !important;

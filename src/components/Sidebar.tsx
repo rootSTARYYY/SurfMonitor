@@ -165,6 +165,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   return (
     <aside
+      data-collapsed={collapsed ? 'true' : 'false'}
       className={`flex h-full shrink-0 flex-col border-r border-white/[0.08] bg-[#09090b] transition-all duration-200 ${
         collapsed ? 'w-16' : 'w-60'
       }`}
@@ -216,7 +217,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     data-tour={`nav-${item.id}`}
                     onClick={() => onNavigate(item.id)}
                     title={collapsed ? item.label : undefined}
-                    className={`group flex w-full items-center justify-between rounded px-2.5 py-1.5 text-[13px] font-medium transition-colors ${
+                    className={`group flex w-full items-center rounded py-1.5 text-[13px] font-medium transition-colors ${collapsed ? 'justify-center px-0' : 'justify-between px-2.5'} ${
                       isActive
                         ? 'bg-white/[0.07] text-zinc-100'
                         : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
