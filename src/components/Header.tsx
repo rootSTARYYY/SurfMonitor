@@ -399,9 +399,9 @@ export const Header: React.FC<HeaderProps> = ({
                     >
                       <span
                         className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${
-                          n.tone === 'danger'
+                          n.type === 'alert'
                             ? 'bg-rose-500'
-                            : n.tone === 'warning'
+                            : n.type === 'warning'
                               ? 'bg-amber-400'
                               : 'bg-emerald-500'
                         }`}
@@ -414,7 +414,7 @@ export const Header: React.FC<HeaderProps> = ({
                           {n.message}
                         </div>
                         <div className="mt-1 font-mono text-[10px] text-zinc-600">
-                          {new Date(n.createdAt).toLocaleTimeString()}
+                          {new Date(n.timestamp).toLocaleTimeString()}
                         </div>
                       </div>
                     </button>
