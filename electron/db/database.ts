@@ -436,6 +436,37 @@ export interface RemoteAuditLogRecord {
 }
 
 
+
+export interface UserProfileRecord {
+  id: string;
+  username: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface TrialStateRecord {
+  id: string;
+  machineIdHash: string;
+  status: 'TRIAL_ACTIVE' | 'TRIAL_EXPIRED' | 'CONVERTED';
+  startedAt: string;
+  expiresAt: string;
+  signedEntitlement: string | null;
+  lastServerTime: string | null;
+  maxObservedUtcMs: number;
+  lastValidatedAt: string | null;
+  lastError: string | null;
+  updatedAt: string;
+}
+
+export interface EntitlementHistoryRecord {
+  id: number;
+  eventType: string;
+  status: string;
+  source: string;
+  details: string | null;
+  createdAt: string;
+}
+
 export interface LicenseStateRecord {
   id: string;
   encryptedLicenseKey: string;
@@ -878,6 +909,39 @@ export class SurfDatabase {
       CREATE INDEX IF NOT EXISTS idx_pm2_proc_sid ON pm2_processes(serverId, linuxUser, pmId);
       CREATE INDEX IF NOT EXISTS idx_pm2_hist_sid_key ON pm2_metric_history(serverId, processKey, collectedAt DESC);
       CREATE INDEX IF NOT EXISTS idx_pm2_events_sid ON pm2_state_events(serverId, createdAt DESC);
+
+
+      CREATE TABLE IF NOT EXISTS user_profile (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS trial_state (
+        id TEXT PRIMARY KEY,
+        machineIdHash TEXT NOT NULL,
+        status TEXT NOT NULL,
+        startedAt TEXT NOT NULL,
+        expiresAt TEXT NOT NULL,
+        signedEntitlement TEXT,
+        lastServerTime TEXT,
+        maxObservedUtcMs INTEGER NOT NULL DEFAULT 0,
+        lastValidatedAt TEXT,
+        lastError TEXT,
+        updatedAt TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS entitlement_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        eventType TEXT NOT NULL,
+        status TEXT NOT NULL,
+        source TEXT NOT NULL,
+        details TEXT,
+        createdAt TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_entitlement_hist_time ON entitlement_history(createdAt DESC);
 
       CREATE TABLE IF NOT EXISTS license_state (
         id TEXT PRIMARY KEY,
@@ -2259,6 +2323,92 @@ export class SurfDatabase {
         now
       );
     return this.getLicenseState()!;
+  }
+
+
+  // --- v4.0.0 User Profile, Trial State & Entitlement History ---
+  public getUserProfile(): UserProfileRecord | undefined {
+    return this.db
+      .prepare("SELECT * FROM user_profile WHERE id = 'primary'")
+      .get() as UserProfileRecord | undefined;
+  }
+
+  public saveUserProfile(username: string): UserProfileRecord {
+    const now = new Date().toISOString();
+    const existing = this.getUserProfile();
+    this.db
+      .prepare(
+        `INSERT INTO user_profile (id, username, createdAt, updatedAt)
+         VALUES ('primary', ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           username = excluded.username,
+           updatedAt = excluded.updatedAt`
+      )
+      .run(username, existing?.createdAt ?? now, now);
+    return this.getUserProfile()!;
+  }
+
+  public getTrialState(): TrialStateRecord | undefined {
+    return this.db
+      .prepare("SELECT * FROM trial_state WHERE id = 'primary'")
+      .get() as TrialStateRecord | undefined;
+  }
+
+  public saveTrialState(
+    input: Omit<TrialStateRecord, 'id' | 'updatedAt'>
+  ): TrialStateRecord {
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `INSERT INTO trial_state (
+          id, machineIdHash, status, startedAt, expiresAt, signedEntitlement,
+          lastServerTime, maxObservedUtcMs, lastValidatedAt, lastError, updatedAt
+        ) VALUES ('primary', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          machineIdHash = excluded.machineIdHash,
+          status = excluded.status,
+          startedAt = excluded.startedAt,
+          expiresAt = excluded.expiresAt,
+          signedEntitlement = excluded.signedEntitlement,
+          lastServerTime = excluded.lastServerTime,
+          maxObservedUtcMs = excluded.maxObservedUtcMs,
+          lastValidatedAt = excluded.lastValidatedAt,
+          lastError = excluded.lastError,
+          updatedAt = excluded.updatedAt`
+      )
+      .run(
+        input.machineIdHash,
+        input.status,
+        input.startedAt,
+        input.expiresAt,
+        input.signedEntitlement,
+        input.lastServerTime,
+        input.maxObservedUtcMs,
+        input.lastValidatedAt,
+        input.lastError,
+        now
+      );
+    return this.getTrialState()!;
+  }
+
+  public recordEntitlementEvent(
+    eventType: string,
+    status: string,
+    source: string,
+    details: string | null = null
+  ): void {
+    this.db
+      .prepare(
+        `INSERT INTO entitlement_history (eventType, status, source, details, createdAt)
+         VALUES (?, ?, ?, ?, ?)`
+      )
+      .run(eventType, status, source, details, new Date().toISOString());
+  }
+
+  public getEntitlementHistory(limit = 50): EntitlementHistoryRecord[] {
+    return this.db
+      .prepare('SELECT * FROM entitlement_history ORDER BY createdAt DESC LIMIT ?')
+      .all(limit) as EntitlementHistoryRecord[];
   }
 
   public clearLicenseState(): void {

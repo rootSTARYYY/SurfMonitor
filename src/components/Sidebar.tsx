@@ -268,7 +268,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-500">
                   {allOperational ? 'System Health' : 'Degraded / Down Services'}
                 </span>
-                <span className="font-mono text-[10px] text-zinc-600">v3.1.0</span>
+                <span className="font-mono text-[10px] text-zinc-600">v4.0.0</span>
               </div>
               {allOperational ? (
                 <p className="px-1 py-1.5 font-mono text-[11px] text-emerald-400">

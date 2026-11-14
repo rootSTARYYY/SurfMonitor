@@ -333,6 +333,8 @@ export type ThemePreference = 'dark' | 'midnight' | 'oled';
 
 export type LicenseStatus =
   | 'ACTIVE'
+  | 'TRIAL_ACTIVE'
+  | 'TRIAL_EXPIRED'
   | 'EXPIRED'
   | 'REVOKED'
   | 'SUSPENDED'
@@ -342,9 +344,20 @@ export type LicenseStatus =
   | 'RATE_LIMITED'
   | 'CONFIG_ERROR';
 
+export interface EntitlementHistoryDTO {
+  id: number;
+  eventType: string;
+  status: string;
+  source: string;
+  details: string | null;
+  createdAt: string;
+}
+
 export interface PublicLicenseState {
   status: LicenseStatus;
   licensed: boolean;
+  isTrial: boolean;
+  username: string | null;
   maskedKey: string | null;
   machineId: string;
   productName: string | null;
@@ -359,6 +372,13 @@ export interface PublicLicenseState {
   machinesUsed: number | null;
   machinesLimit: number | null;
   analyticsEnabled: boolean;
+  trialStartedAt: string | null;
+  trialExpiresAt: string | null;
+  trialRemainingMs: number | null;
+  trialServerEnforced: boolean;
+  clockTamperDetected: boolean;
+  discordInviteUrl: string;
+  history: EntitlementHistoryDTO[];
   message: string | null;
 }
 
@@ -771,8 +791,12 @@ declare global {
       getLicenseState: () => Promise<PublicLicenseState>;
       activateLicense: (
         key: string,
-        analyticsEnabled?: boolean
+        analyticsEnabled?: boolean,
+        username?: string
       ) => Promise<PublicLicenseState>;
+      startTrial: (username: string) => Promise<PublicLicenseState>;
+      setUsername: (username: string) => Promise<PublicLicenseState>;
+      setDiscordInviteUrl: (url: string) => Promise<PublicLicenseState>;
       validateLicenseNow: () => Promise<PublicLicenseState>;
       clearLocalLicense: () => Promise<PublicLicenseState>;
       setLicenseAnalytics: (enabled: boolean) => Promise<PublicLicenseState>;

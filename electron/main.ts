@@ -490,6 +490,23 @@ function createWindow(): void {
   });
 }
 
+
+function assertAuthorized(): void {
+  if (!licenseService || !licenseService.hasValidCachedActivation()) {
+    throw new Error('ACCESS_DENIED: Active license or 7-day trial required.');
+  }
+}
+
+function protectedHandle(
+  channel: string,
+  listener: (event: Electron.IpcMainInvokeEvent, ...args: any[]) => any
+): void {
+  ipcMain.handle(channel, (event, ...args) => {
+    assertAuthorized();
+    return listener(event, ...args);
+  });
+}
+
 function registerIpcHandlers(): void {
   ipcMain.handle('app:get-info', () => ({
     name: 'Surf Monitor',
@@ -525,7 +542,7 @@ function registerIpcHandlers(): void {
   );
 
   // --- Monitors ---
-  ipcMain.handle('monitors:list', () => {
+  protectedHandle('monitors:list', () => {
     if (!db) throw new Error('Database not initialized');
     return db.getAllMonitors().map((m) => buildMonitorSummary(db!, m));
   });
@@ -555,7 +572,7 @@ function registerIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle('monitors:create', (_event, payload: unknown) => {
+  protectedHandle('monitors:create', (_event, payload: unknown) => {
     if (!db || !scheduler) throw new Error('Engine not initialized');
     const validated = validateMonitorPayload(payload);
     const created = db.createMonitor(validated);
@@ -586,7 +603,7 @@ function registerIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle('monitors:delete', (_event, id: unknown) => {
+  protectedHandle('monitors:delete', (_event, id: unknown) => {
     if (!db || !scheduler) throw new Error('Engine not initialized');
     if (typeof id !== 'string' || !id) throw new Error('Invalid monitor ID');
     scheduler.unscheduleMonitor(id);
@@ -612,14 +629,14 @@ function registerIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle('monitors:manual-check', async (_event, id: unknown) => {
+  protectedHandle('monitors:manual-check', async (_event, id: unknown) => {
     if (!db || !scheduler) throw new Error('Engine not initialized');
     if (typeof id !== 'string' || !id) throw new Error('Invalid monitor ID');
     return scheduler.runManualCheck(id);
   });
 
   // --- Overview & Analytics ---
-  ipcMain.handle('overview:data', (_event, range: unknown = '24h') => {
+  protectedHandle('overview:data', (_event, range: unknown = '24h') => {
     if (!db) throw new Error('Database not initialized');
     const sinceIso = getRangeCutoffIso(
       typeof range === 'string' ? range : '24h'
@@ -644,7 +661,7 @@ function registerIpcHandlers(): void {
     };
   });
 
-  ipcMain.handle('analytics:data', (_event, range: unknown = '7d') => {
+  protectedHandle('analytics:data', (_event, range: unknown = '7d') => {
     if (!db) throw new Error('Database not initialized');
     const sinceIso = getRangeCutoffIso(
       typeof range === 'string' ? range : '7d'
@@ -658,12 +675,12 @@ function registerIpcHandlers(): void {
   });
 
   // --- Incidents ---
-  ipcMain.handle('incidents:list', () => {
+  protectedHandle('incidents:list', () => {
     if (!db) throw new Error('Database not initialized');
     return db.getAllIncidents();
   });
 
-  ipcMain.handle('incidents:events', (_event, incidentId: string) => {
+  protectedHandle('incidents:events', (_event, incidentId: string) => {
     if (!db) throw new Error('Database not initialized');
     return db.getIncidentEvents(incidentId);
   });
@@ -696,7 +713,7 @@ function registerIpcHandlers(): void {
   );
 
   // --- Groups, Services & Dependencies ---
-  ipcMain.handle('groups:list', () => db?.getAllGroups() ?? []);
+  protectedHandle('groups:list', () => db?.getAllGroups() ?? []);
   ipcMain.handle(
     'groups:create',
     (
@@ -707,12 +724,12 @@ function registerIpcHandlers(): void {
       return db.createGroup(input);
     }
   );
-  ipcMain.handle('groups:delete', (_event, id: string) => {
+  protectedHandle('groups:delete', (_event, id: string) => {
     if (!db) throw new Error('Database not initialized');
     return db.deleteGroup(id);
   });
 
-  ipcMain.handle('services:overview', () => {
+  protectedHandle('services:overview', () => {
     if (!db) throw new Error('Database not initialized');
     const services = db.getAllServices();
     const monitors = db.getAllMonitors();
@@ -744,7 +761,7 @@ function registerIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle('services:delete', (_event, id: string) => {
+  protectedHandle('services:delete', (_event, id: string) => {
     if (!db) throw new Error('Database not initialized');
     return db.deleteService(id);
   });
@@ -788,13 +805,13 @@ function registerIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle('services:remove-dependency', (_event, id: string) => {
+  protectedHandle('services:remove-dependency', (_event, id: string) => {
     if (!db) throw new Error('Database not initialized');
     return db.removeServiceDependency(id);
   });
 
   // --- Notifications ---
-  ipcMain.handle('notifications:channels', () => {
+  protectedHandle('notifications:channels', () => {
     if (!db) throw new Error('Database not initialized');
     return db.getNotificationChannels().map((c) => ({
       id: c.id,
@@ -832,7 +849,7 @@ function registerIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle('notifications:get-channel-safe', (_event, id: string) => {
+  protectedHandle('notifications:get-channel-safe', (_event, id: string) => {
     if (!db) throw new Error('Database not initialized');
     const ch = db.getNotificationChannels().find((c) => c.id === id);
     if (!ch) throw new Error('Channel not found');
@@ -945,12 +962,12 @@ function registerIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle('notifications:delete-channel', (_event, id: string) => {
+  protectedHandle('notifications:delete-channel', (_event, id: string) => {
     if (!db) throw new Error('Database not initialized');
     return db.deleteNotificationChannel(id);
   });
 
-  ipcMain.handle('notifications:test-channel', async (_event, id: string) => {
+  protectedHandle('notifications:test-channel', async (_event, id: string) => {
     if (!db || !notifier) throw new Error('Notifier not initialized');
     const ch = db.getNotificationChannels().find((c) => c.id === id);
     if (!ch) throw new Error('Channel not found');
@@ -965,21 +982,21 @@ function registerIpcHandlers(): void {
     });
   });
 
-  ipcMain.handle('notifications:history', () => {
+  protectedHandle('notifications:history', () => {
     return db?.getNotificationHistory(100) ?? [];
   });
 
   // --- Website Intelligence ---
-  ipcMain.handle('intel:redirects', (_event, url: string) =>
+  protectedHandle('intel:redirects', (_event, url: string) =>
     analyzeRedirects(url)
   );
-  ipcMain.handle('intel:security-headers', (_event, url: string) =>
+  protectedHandle('intel:security-headers', (_event, url: string) =>
     analyzeSecurityHeaders(url)
   );
-  ipcMain.handle('intel:broken-links-list', () =>
+  protectedHandle('intel:broken-links-list', () =>
     db?.getBrokenLinkScans() ?? []
   );
-  ipcMain.handle('intel:broken-links-results', (_event, scanId: string) =>
+  protectedHandle('intel:broken-links-results', (_event, scanId: string) =>
     db?.getBrokenLinkResults(scanId) ?? []
   );
   ipcMain.handle(
@@ -1014,7 +1031,7 @@ function registerIpcHandlers(): void {
 
 
   // --- Remote Infrastructure (Phases 14 & 15) ---
-  ipcMain.handle('servers:pick-key-file', async () => {
+  protectedHandle('servers:pick-key-file', async () => {
     const res = await dialog.showOpenDialog({
       title: 'Select SSH Private Key',
       properties: ['openFile'],
@@ -1026,7 +1043,7 @@ function registerIpcHandlers(): void {
     };
   });
 
-  ipcMain.handle('servers:list', () => {
+  protectedHandle('servers:list', () => {
     if (!db) throw new Error('Database not initialized');
     return db.getAllRemoteServers().map((s) => {
       const latestMetric = db!.getServerMetrics(s.id, 1)[0] ?? null;
@@ -1061,7 +1078,7 @@ function registerIpcHandlers(): void {
     });
   });
 
-  ipcMain.handle('servers:detail', (_event, id: string) => {
+  protectedHandle('servers:detail', (_event, id: string) => {
     if (!db) throw new Error('Database not initialized');
     const s = db.getRemoteServerById(id);
     if (!s) throw new Error('Server not found');
@@ -1251,7 +1268,7 @@ function registerIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle('servers:upgrade-agent', async (_event, id: string) => {
+  protectedHandle('servers:upgrade-agent', async (_event, id: string) => {
     if (!db || !sshManager || !remotePoller) throw new Error('Engine not initialized');
     const srv = db.getRemoteServerById(id);
     if (!srv) throw new Error('Server not found');
@@ -1286,7 +1303,7 @@ function registerIpcHandlers(): void {
   });
 
   // --- PM2 Process Monitoring & Management ---
-  ipcMain.handle('pm2:list-all', () => {
+  protectedHandle('pm2:list-all', () => {
     if (!db) throw new Error('Database not initialized');
     const servers = db.getAllRemoteServers();
     const instances = db.getPm2Instances();
@@ -1294,7 +1311,7 @@ function registerIpcHandlers(): void {
     return { servers, instances, processes };
   });
 
-  ipcMain.handle('pm2:refresh', async (_event, serverId?: string) => {
+  protectedHandle('pm2:refresh', async (_event, serverId?: string) => {
     if (!db || !remotePoller) throw new Error('Engine not initialized');
     const targets = serverId
       ? [db.getRemoteServerById(serverId)].filter(Boolean)
@@ -1309,7 +1326,7 @@ function registerIpcHandlers(): void {
     };
   });
 
-  ipcMain.handle('pm2:detail', (_event, serverId: string, processKey: string) => {
+  protectedHandle('pm2:detail', (_event, serverId: string, processKey: string) => {
     if (!db) throw new Error('Database not initialized');
     const processRecord = db.getPm2ProcessByKey(serverId, processKey);
     if (!processRecord) throw new Error('PM2 process not found');
@@ -1362,14 +1379,14 @@ function registerIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle('servers:delete', (_event, id: string) => {
+  protectedHandle('servers:delete', (_event, id: string) => {
     if (!db || !remotePoller || !sshManager) throw new Error('Not initialized');
     remotePoller.unscheduleServer(id);
     sshManager.disconnect(id);
     return db.deleteRemoteServer(id);
   });
 
-  ipcMain.handle('servers:toggle-connect', (_event, id: string, enabled: boolean) => {
+  protectedHandle('servers:toggle-connect', (_event, id: string, enabled: boolean) => {
     if (!db || !remotePoller || !sshManager) throw new Error('Not initialized');
     const updated = db.updateRemoteServer(id, { enabled });
     if (!updated) throw new Error('Server not found');
@@ -1383,12 +1400,12 @@ function registerIpcHandlers(): void {
     return true;
   });
 
-  ipcMain.handle('servers:poll-now', async (_event, id: string) => {
+  protectedHandle('servers:poll-now', async (_event, id: string) => {
     if (!remotePoller) throw new Error('Poller not initialized');
     return remotePoller.pollServer(id);
   });
 
-  ipcMain.handle('servers:docker-list', async (_event, serverId: string) => {
+  protectedHandle('servers:docker-list', async (_event, serverId: string) => {
     if (!db || !sshManager) throw new Error('Not initialized');
     const srv = db.getRemoteServerById(serverId);
     if (!srv) throw new Error('Server not found');
@@ -1403,7 +1420,7 @@ function registerIpcHandlers(): void {
     }
   );
 
-  ipcMain.handle('servers:services-list', async (_event, serverId: string) => {
+  protectedHandle('servers:services-list', async (_event, serverId: string) => {
     if (!db || !sshManager) throw new Error('Not initialized');
     const srv = db.getRemoteServerById(serverId);
     if (!srv) throw new Error('Server not found');
@@ -1427,13 +1444,42 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(
     'license:activate',
-    async (_event, key: string, analyticsEnabled = true) => {
+    async (_event, key: string, analyticsEnabled = true, username?: string) => {
       if (!licenseService) throw new Error('License service not initialized');
-      const state = await licenseService.activateWithKey(key, analyticsEnabled);
+      const state = await licenseService.activateWithKey(key, analyticsEnabled, username);
+      if (state.licensed) {
+        scheduler?.start();
+        remotePoller?.start();
+      }
       mainWindow?.webContents.send('license:updated', state);
       return state;
     }
   );
+
+  ipcMain.handle('trial:start', async (_event, username: string) => {
+    if (!licenseService) throw new Error('License service not initialized');
+    const state = await licenseService.startTrial(username);
+    if (state.licensed) {
+      scheduler?.start();
+      remotePoller?.start();
+    }
+    mainWindow?.webContents.send('license:updated', state);
+    return state;
+  });
+
+  ipcMain.handle('profile:set-username', (_event, username: string) => {
+    if (!licenseService) throw new Error('License service not initialized');
+    const state = licenseService.setUsername(username);
+    mainWindow?.webContents.send('license:updated', state);
+    return state;
+  });
+
+  ipcMain.handle('license:set-discord-invite', (_event, url: string) => {
+    if (!licenseService) throw new Error('License service not initialized');
+    const state = licenseService.setDiscordInviteUrl(url);
+    mainWindow?.webContents.send('license:updated', state);
+    return state;
+  });
 
   ipcMain.handle('license:validate-now', async () => {
     if (!licenseService) throw new Error('License service not initialized');
@@ -1445,6 +1491,10 @@ function registerIpcHandlers(): void {
   ipcMain.handle('license:clear-local', () => {
     if (!licenseService) throw new Error('License service not initialized');
     const state = licenseService.clearLocalActivation();
+    if (!state.licensed) {
+      scheduler?.stop();
+      remotePoller?.stop();
+    }
     mainWindow?.webContents.send('license:updated', state);
     return state;
   });
@@ -1471,7 +1521,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle('startup:get-timings', () => startupTimings);
 
   // --- Maintenance Windows ---
-  ipcMain.handle('maintenance:list', () =>
+  protectedHandle('maintenance:list', () =>
     db?.getMaintenanceWindows() ?? []
   );
   ipcMain.handle(
@@ -1490,7 +1540,7 @@ function registerIpcHandlers(): void {
       return db.createMaintenanceWindow(input);
     }
   );
-  ipcMain.handle('maintenance:delete', (_event, id: string) => {
+  protectedHandle('maintenance:delete', (_event, id: string) => {
     if (!db) throw new Error('Database not initialized');
     return db.deleteMaintenanceWindow(id);
   });
@@ -1503,8 +1553,8 @@ function registerIpcHandlers(): void {
   );
 
   // --- Backups, Retention & Import/Export ---
-  ipcMain.handle('backup:list', () => db?.getBackupHistory() ?? []);
-  ipcMain.handle('backup:create', async () => {
+  protectedHandle('backup:list', () => db?.getBackupHistory() ?? []);
+  protectedHandle('backup:create', async () => {
     if (!db) throw new Error('Database not initialized');
     const backupDir = path.join(app.getPath('userData'), 'backups');
     fs.mkdirSync(backupDir, { recursive: true });
@@ -1525,12 +1575,12 @@ function registerIpcHandlers(): void {
     return rec;
   });
 
-  ipcMain.handle('db:cleanup', (_event, retentionDays: number) => {
+  protectedHandle('db:cleanup', (_event, retentionDays: number) => {
     if (!db) throw new Error('Database not initialized');
     return db.cleanupOldRecords(retentionDays);
   });
 
-  ipcMain.handle('export:monitors-json', async () => {
+  protectedHandle('export:monitors-json', async () => {
     if (!db) throw new Error('Database not initialized');
     const monitors = db
       .getAllMonitors()
@@ -1545,7 +1595,7 @@ function registerIpcHandlers(): void {
     return res.filePath;
   });
 
-  ipcMain.handle('export:incidents-csv', async () => {
+  protectedHandle('export:incidents-csv', async () => {
     if (!db) throw new Error('Database not initialized');
     const incidents = db.getAllIncidents();
     const header =
@@ -1644,16 +1694,20 @@ app.whenReady().then(async () => {
     mainWindow?.show();
     startupTimings.totalStartupMs = Math.round(performance.now() - t0);
 
-    // Defer background license validation and polling so dashboard opens immediately
+    // Only start background monitoring when entitlement is active; verify in background
     if (hasCachedLicense) {
+      scheduler?.start();
+      remotePoller?.start();
       void licenseService?.validateCurrent().then((st) => {
+        if (!st.licensed) {
+          scheduler?.stop();
+          remotePoller?.stop();
+        }
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('license:updated', st);
         }
       });
     }
-    scheduler?.start();
-    remotePoller?.start();
   });
 
   app.on('activate', () => {

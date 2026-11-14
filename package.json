@@ -1,6 +1,6 @@
 {
   "name": "surf-monitor",
-  "version": "3.2.0",
+  "version": "4.0.0",
   "description": "Surf Monitor - Local-first website, infrastructure, SSH agent, PM2, Docker, and service monitoring suite",
   "main": "dist-electron/main.js",
   "author": "Surf Monitor",
@@ -85,6 +85,34 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "shortcutName": "Surf Monitor"
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "category": "public.app-category.developer-tools",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "Utility",
+      "target": [
+        "AppImage",
+        "deb"
+      ]
     }
   }
 }

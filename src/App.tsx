@@ -32,7 +32,7 @@ import { Overview } from '@/pages/Overview';
 import { Monitors } from '@/pages/Monitors';
 import { MonitorDetail } from '@/pages/MonitorDetail';
 import { Analytics } from '@/pages/Analytics';
-import { Settings } from '@/pages/Settings';
+import { Settings, SettingsTab } from '@/pages/Settings';
 import {
   DependencyMapPage,
   GroupsPage,
@@ -89,6 +89,7 @@ export const App: React.FC = () => {
   const [licenseState, setLicenseState] = useState<PublicLicenseState | null>(null);
   const [licenseChecked, setLicenseChecked] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>('general');
 
   const [overviewRange, setOverviewRange] = useState<TimeRangeFilter>('24h');
   const [detailRange, setDetailRange] = useState<TimeRangeFilter>('24h');
@@ -258,17 +259,18 @@ export const App: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (!licenseChecked || !licenseState?.licensed) return;
     void refreshCoreData();
-  }, [refreshCoreData]);
+  }, [licenseChecked, licenseState?.licensed, refreshCoreData]);
 
   useEffect(() => {
-    if (activePage === 'monitor-detail' && selectedMonitorId) {
+    if (licenseState?.licensed && activePage === 'monitor-detail' && selectedMonitorId) {
       void refreshDetail(selectedMonitorId, detailRange);
     }
   }, [activePage, selectedMonitorId, detailRange, refreshDetail]);
 
   useEffect(() => {
-    if (activePage === 'reports') {
+    if (licenseState?.licensed && activePage === 'reports') {
       void refreshAnalytics(analyticsRange);
     }
   }, [activePage, analyticsRange, refreshAnalytics]);
@@ -293,7 +295,7 @@ export const App: React.FC = () => {
         }
       }
 
-      if (activePage === 'reports') {
+      if (licenseState?.licensed && activePage === 'reports') {
         void refreshAnalytics(analyticsRange);
       }
 
@@ -536,6 +538,19 @@ export const App: React.FC = () => {
           onMarkAllNotificationsRead={() =>
             setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
           }
+          licenseState={licenseState}
+          userStats={{
+            totalMonitors: monitors.length,
+            activeMonitors: monitors.filter((m) => m.enabled).length,
+            downMonitors: monitors.filter((m) => m.status === 'DOWN').length,
+            registeredServers: remoteServers.length,
+            totalPm2Processes: pm2Count,
+            appVersion: '4.0.0',
+          }}
+          onManageLicense={() => {
+            setSettingsInitialTab('license');
+            handleNavigate('settings');
+          }}
         />
 
         <main className="flex-1 overflow-y-auto p-5 lg:p-6">
@@ -756,6 +771,7 @@ export const App: React.FC = () => {
               <Settings
                 settings={settings}
                 licenseState={licenseState}
+                initialTab={settingsInitialTab}
                 onUpdateSettings={setSettings}
                 onLicenseUpdated={setLicenseState}
                 onResetDefaults={() => setSettings(DEFAULT_SETTINGS)}

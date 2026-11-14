@@ -149,8 +149,14 @@ const surfMonitorAPI = {
 
   // Licensing & Settings (v2.2.0)
   getLicenseState: () => ipcRenderer.invoke('license:get-state'),
-  activateLicense: (key: string, analyticsEnabled?: boolean) =>
-    ipcRenderer.invoke('license:activate', key, analyticsEnabled),
+  activateLicense: (key: string, analyticsEnabled = true, username?: string) =>
+    ipcRenderer.invoke('license:activate', key, analyticsEnabled, username),
+  startTrial: (username: string) =>
+    ipcRenderer.invoke('trial:start', username),
+  setUsername: (username: string) =>
+    ipcRenderer.invoke('profile:set-username', username),
+  setDiscordInviteUrl: (url: string) =>
+    ipcRenderer.invoke('license:set-discord-invite', url),
   validateLicenseNow: () => ipcRenderer.invoke('license:validate-now'),
   clearLocalLicense: () => ipcRenderer.invoke('license:clear-local'),
   setLicenseAnalytics: (enabled: boolean) =>
