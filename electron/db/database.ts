@@ -467,6 +467,16 @@ export interface EntitlementHistoryRecord {
   createdAt: string;
 }
 
+
+export interface CustomThemeRecord {
+  id: string;
+  name: string;
+  themeJson: string;
+  isDefault: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface LicenseStateRecord {
   id: string;
   encryptedLicenseKey: string;
@@ -942,6 +952,16 @@ export class SurfDatabase {
       );
 
       CREATE INDEX IF NOT EXISTS idx_entitlement_hist_time ON entitlement_history(createdAt DESC);
+
+
+      CREATE TABLE IF NOT EXISTS custom_themes (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        themeJson TEXT NOT NULL,
+        isDefault INTEGER NOT NULL DEFAULT 0,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
 
       CREATE TABLE IF NOT EXISTS license_state (
         id TEXT PRIMARY KEY,
@@ -2746,6 +2766,74 @@ export class SurfDatabase {
         input.enabled
       );
     return this.getPm2AlertConfig(input.serverId);
+  }
+
+
+  // --- v4.1.0 Custom Themes Persistence ---
+  public getCustomThemes(): CustomThemeRecord[] {
+    return this.db
+      .prepare('SELECT * FROM custom_themes ORDER BY updatedAt DESC')
+      .all() as CustomThemeRecord[];
+  }
+
+  public saveCustomTheme(input: {
+    id: string;
+    name: string;
+    themeJson: string;
+    isDefault?: boolean;
+  }): CustomThemeRecord {
+    const now = new Date().toISOString();
+    const existing = this.db
+      .prepare('SELECT * FROM custom_themes WHERE id = ?')
+      .get(input.id) as CustomThemeRecord | undefined;
+    if (input.isDefault) {
+      this.db.prepare('UPDATE custom_themes SET isDefault = 0').run();
+    }
+    this.db
+      .prepare(
+        `INSERT INTO custom_themes (id, name, themeJson, isDefault, createdAt, updatedAt)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(id) DO UPDATE SET
+           name = excluded.name,
+           themeJson = excluded.themeJson,
+           isDefault = excluded.isDefault,
+           updatedAt = excluded.updatedAt`
+      )
+      .run(
+        input.id,
+        input.name,
+        input.themeJson,
+        input.isDefault !== undefined ? (input.isDefault ? 1 : 0) : (existing?.isDefault ?? 0),
+        existing?.createdAt ?? now,
+        now
+      );
+    return this.db
+      .prepare('SELECT * FROM custom_themes WHERE id = ?')
+      .get(input.id) as CustomThemeRecord;
+  }
+
+  public deleteCustomTheme(id: string): boolean {
+    const res = this.db.prepare('DELETE FROM custom_themes WHERE id = ?').run(id);
+    return res.changes > 0;
+  }
+
+  public getActiveThemeId(): string {
+    const saved = this.getAppSetting('active_theme_id');
+    if (saved) return saved;
+    // Migrate legacy v3.x/v4.0 appearance preset seamlessly
+    const rawSettings = this.getAppSetting('user_settings_v2');
+    if (rawSettings) {
+      try {
+        const parsed = JSON.parse(rawSettings) as { theme?: string };
+        if (parsed.theme === 'midnight') return 'preset-midnight';
+        if (parsed.theme === 'oled') return 'preset-oled';
+      } catch {}
+    }
+    return 'preset-dark';
+  }
+
+  public setActiveThemeId(id: string): void {
+    this.setAppSetting('active_theme_id', id);
   }
 
   public close(): void {

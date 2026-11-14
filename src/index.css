@@ -2,6 +2,78 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --surf-primary: #10b981;
+  --surf-secondary: #38bdf8;
+  --surf-accent: #b5e637;
+  --surf-app-bg: #09090b;
+  --surf-sidebar-bg: #09090b;
+  --surf-toolbar-bg: #09090b;
+  --surf-content-bg: #09090b;
+  --surf-card-bg: #09090b;
+  --surf-elevated-bg: #101114;
+  --surf-modal-bg: #111216;
+  --surf-dropdown-bg: #111216;
+  --surf-input-bg: #101114;
+  --surf-border: rgba(255, 255, 255, 0.08);
+  --surf-divider: rgba(255, 255, 255, 0.06);
+  --surf-hover: rgba(255, 255, 255, 0.04);
+  --surf-selected: rgba(255, 255, 255, 0.07);
+  --surf-active: #059669;
+  --surf-focus-ring: rgba(16, 185, 129, 0.5);
+  --surf-text-primary: #f4f4f5;
+  --surf-text-secondary: #a1a1aa;
+  --surf-text-muted: #71717a;
+  --surf-text-disabled: #52525b;
+  --surf-link: #34d399;
+
+  --surf-status-operational: #10b981;
+  --surf-status-online: #34d399;
+  --surf-status-offline: #f43f5e;
+  --surf-status-degraded: #f59e0b;
+  --surf-status-warning: #fbbf24;
+  --surf-status-critical: #ef4444;
+  --surf-status-maintenance: #38bdf8;
+  --surf-status-unknown: #71717a;
+  --surf-status-pending: #a78bfa;
+  --surf-status-success: #10b981;
+  --surf-status-error: #f43f5e;
+
+  --surf-font-app: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --surf-font-heading: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --surf-font-body: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --surf-font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --surf-font-size-base: 14px;
+  --surf-font-size-small: 11px;
+  --surf-font-size-button: 12px;
+  --surf-heading-weight: 600;
+  --surf-body-weight: 400;
+  --surf-line-height: 1.5;
+  --surf-letter-spacing: 0em;
+  --surf-heading-transform: none;
+
+  --surf-sidebar-width: 240px;
+  --surf-toolbar-height: 48px;
+  --surf-page-padding: 20px;
+  --surf-card-padding: 16px;
+  --surf-card-gap: 16px;
+  --surf-radius: 6px;
+  --surf-button-radius: 6px;
+  --surf-input-radius: 6px;
+  --surf-modal-radius: 8px;
+  --surf-badge-radius: 4px;
+  --surf-border-width: 1px;
+  --surf-button-bg: #059669;
+  --surf-button-text: #ffffff;
+  --surf-button-hover-bg: #10b981;
+  --surf-table-header-bg: #0e1014;
+  --surf-table-row-hover: rgba(255, 255, 255, 0.03);
+  --surf-progress-track: rgba(255, 255, 255, 0.06);
+  --surf-transition-ms: 150ms;
+  --surf-blur: 0px;
+  --surf-bg-paint: #09090b;
+}
+
 @layer base {
   html,
   body,
@@ -11,11 +83,29 @@
   }
 
   body {
-    font-family: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: var(--surf-font-app);
+    font-size: var(--surf-font-size-base);
+    font-weight: var(--surf-body-weight);
+    line-height: var(--surf-line-height);
+    letter-spacing: var(--surf-letter-spacing);
+    color: var(--surf-text-primary);
+    background: var(--surf-bg-paint);
     overflow: hidden;
   }
 
-  /* Custom subtle scrollbars for desktop feel */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--surf-font-heading);
+    font-weight: var(--surf-heading-weight);
+    text-transform: var(--surf-heading-transform);
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--surf-focus-ring);
+    outline-offset: 1px;
+  }
+
   ::-webkit-scrollbar {
     width: 8px;
     height: 8px;
@@ -32,5 +122,134 @@
 
   ::-webkit-scrollbar-thumb:hover {
     background: rgba(161, 161, 170, 0.35);
+  }
+}
+
+/* Global Theme Token Bindings across Surf Monitor UI */
+.surf-app-shell {
+  background: var(--surf-bg-paint);
+  color: var(--surf-text-primary);
+  transition: background-color var(--surf-transition-ms) ease, color var(--surf-transition-ms) ease;
+}
+
+.surf-app-shell aside {
+  background-color: var(--surf-sidebar-bg) !important;
+  width: var(--surf-sidebar-width);
+  border-color: var(--surf-border) !important;
+}
+
+.surf-app-shell header {
+  background-color: var(--surf-toolbar-bg) !important;
+  height: var(--surf-toolbar-height) !important;
+  border-color: var(--surf-border) !important;
+}
+
+.surf-app-shell main {
+  padding: var(--surf-page-padding) !important;
+}
+
+.surf-app-shell .bg-\[\#09090b\] {
+  background-color: var(--surf-card-bg) !important;
+  backdrop-filter: blur(var(--surf-blur));
+}
+
+.surf-app-shell .bg-\[\#101114\],
+.surf-app-shell .bg-\[\#101115\],
+.surf-app-shell .bg-\[\#0e1014\],
+.surf-app-shell .bg-\[\#0e1015\] {
+  background-color: var(--surf-elevated-bg) !important;
+}
+
+.surf-app-shell .bg-\[\#111216\] {
+  background-color: var(--surf-modal-bg) !important;
+}
+
+.surf-app-shell .border-white\/\[0\.08\],
+.surf-app-shell .border-white\/\[0\.07\],
+.surf-app-shell .border-white\/\[0\.06\],
+.surf-app-shell .border-white\/\[0\.1\],
+.surf-app-shell .border-white\/\[0\.12\] {
+  border-color: var(--surf-border) !important;
+}
+
+.surf-app-shell .text-zinc-100,
+.surf-app-shell .text-zinc-200 {
+  color: var(--surf-text-primary) !important;
+}
+
+.surf-app-shell .text-zinc-300,
+.surf-app-shell .text-zinc-400 {
+  color: var(--surf-text-secondary) !important;
+}
+
+.surf-app-shell .text-zinc-500,
+.surf-app-shell .text-zinc-600 {
+  color: var(--surf-text-muted) !important;
+}
+
+.surf-app-shell .font-mono {
+  font-family: var(--surf-font-mono);
+}
+
+.surf-app-shell .rounded {
+  border-radius: var(--surf-radius);
+}
+
+.surf-app-shell button,
+.surf-app-shell input,
+.surf-app-shell select,
+.surf-app-shell textarea {
+  transition-duration: var(--surf-transition-ms);
+}
+
+.surf-app-shell input,
+.surf-app-shell select,
+.surf-app-shell textarea {
+  border-radius: var(--surf-input-radius);
+}
+
+.surf-app-shell .bg-emerald-600 {
+  background-color: var(--surf-button-bg) !important;
+  color: var(--surf-button-text) !important;
+  border-radius: var(--surf-button-radius);
+}
+
+.surf-app-shell .bg-emerald-600:hover {
+  background-color: var(--surf-button-hover-bg) !important;
+}
+
+.surf-app-shell .text-emerald-400,
+.surf-app-shell .text-emerald-300 {
+  color: var(--surf-status-operational) !important;
+}
+
+.surf-app-shell .bg-emerald-500 {
+  background-color: var(--surf-status-online) !important;
+}
+
+.surf-app-shell .text-rose-400,
+.surf-app-shell .text-rose-300 {
+  color: var(--surf-status-offline) !important;
+}
+
+.surf-app-shell .bg-rose-500 {
+  background-color: var(--surf-status-critical) !important;
+}
+
+.surf-app-shell .text-amber-400,
+.surf-app-shell .text-amber-300 {
+  color: var(--surf-status-degraded) !important;
+}
+
+.surf-app-shell .bg-amber-500 {
+  background-color: var(--surf-status-warning) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
   }
 }

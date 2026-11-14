@@ -833,7 +833,7 @@ export class LicenseService {
       this.analyticsHandle = client.analytics({
         licenseKey,
         fingerprint: fp,
-        productVersion: '4.0.0',
+        productVersion: '4.1.0',
         enabled,
       });
     } catch {

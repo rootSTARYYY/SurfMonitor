@@ -1506,6 +1506,92 @@ function registerIpcHandlers(): void {
     return state;
   });
 
+  ipcMain.handle('themes:get-state', () => {
+    if (!db) throw new Error('Database not initialized');
+    return {
+      activeThemeId: db.getActiveThemeId(),
+      themes: db.getCustomThemes(),
+      safeMode: process.argv.includes('--safe-theme'),
+    };
+  });
+
+  ipcMain.handle(
+    'themes:save',
+    (
+      _event,
+      input: { id: string; name: string; themeJson: string; isDefault?: boolean }
+    ) => {
+      if (!db) throw new Error('Database not initialized');
+      return db.saveCustomTheme(input);
+    }
+  );
+
+  ipcMain.handle('themes:delete', (_event, id: string) => {
+    if (!db) throw new Error('Database not initialized');
+    return db.deleteCustomTheme(id);
+  });
+
+  ipcMain.handle('themes:set-active', (_event, id: string) => {
+    if (!db) throw new Error('Database not initialized');
+    db.setActiveThemeId(id);
+    return true;
+  });
+
+  ipcMain.handle(
+    'themes:export-file',
+    async (_event, defaultFileName: string, content: string) => {
+      const safeName = defaultFileName.replace(/[^a-zA-Z0-9._-]/g, '-') || 'surf-theme.json';
+      const isCss = safeName.endsWith('.css');
+      const res = await dialog.showSaveDialog({
+        title: isCss ? 'Export Custom CSS' : 'Export Surf Monitor Theme',
+        defaultPath: safeName,
+        filters: [
+          isCss
+            ? { name: 'CSS Stylesheet', extensions: ['css'] }
+            : { name: 'Surf Theme JSON', extensions: ['json'] },
+        ],
+      });
+      if (res.canceled || !res.filePath) return null;
+      fs.writeFileSync(res.filePath, content, 'utf8');
+      return res.filePath;
+    }
+  );
+
+  ipcMain.handle('themes:import-file', async (_event, kind: 'json' | 'css' = 'json') => {
+    const res = await dialog.showOpenDialog({
+      title: kind === 'css' ? 'Import Custom CSS' : 'Import Surf Monitor Theme',
+      properties: ['openFile'],
+      filters: [
+        kind === 'css'
+          ? { name: 'CSS Stylesheet', extensions: ['css'] }
+          : { name: 'Surf Theme JSON', extensions: ['json'] },
+      ],
+    });
+    if (res.canceled || !res.filePaths[0]) return null;
+    const stat = fs.statSync(res.filePaths[0]);
+    if (stat.size > 2 * 1024 * 1024) {
+      throw new Error('Selected file exceeds 2 MB limit.');
+    }
+    return fs.readFileSync(res.filePaths[0], 'utf8');
+  });
+
+  ipcMain.handle('themes:pick-bg-image', async () => {
+    const res = await dialog.showOpenDialog({
+      title: 'Select Background Image',
+      properties: ['openFile'],
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+    });
+    if (res.canceled || !res.filePaths[0]) return null;
+    const stat = fs.statSync(res.filePaths[0]);
+    if (stat.size > 2 * 1024 * 1024) {
+      throw new Error('Background image must be under 2 MB.');
+    }
+    const ext = path.extname(res.filePaths[0]).toLowerCase().replace('.', '');
+    const mime = ext === 'jpg' ? 'jpeg' : ext;
+    const b64 = fs.readFileSync(res.filePaths[0]).toString('base64');
+    return `data:image/${mime};base64,${b64}`;
+  });
+
   ipcMain.handle('settings:get', () => {
     if (!db) return null;
     const raw = db.getAppSetting('user_settings_v2');

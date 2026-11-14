@@ -33,6 +33,7 @@ import { Monitors } from '@/pages/Monitors';
 import { MonitorDetail } from '@/pages/MonitorDetail';
 import { Analytics } from '@/pages/Analytics';
 import { Settings, SettingsTab } from '@/pages/Settings';
+import { applyThemeToDocument, BUILT_IN_THEMES, SurfTheme, validateAndMigrateTheme } from '@/theme/themeEngine';
 import {
   DependencyMapPage,
   GroupsPage,
@@ -90,6 +91,11 @@ export const App: React.FC = () => {
   const [licenseChecked, setLicenseChecked] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>('general');
+  const [activeTheme, setActiveTheme] = useState<SurfTheme>(BUILT_IN_THEMES[0]);
+  const [draftTheme, setDraftTheme] = useState<SurfTheme | null>(null);
+  const [customThemes, setCustomThemes] = useState<SurfTheme[]>([]);
+  const [defaultThemeId, setDefaultThemeId] = useState<string | null>(null);
+  const [themeSafeMode, setThemeSafeMode] = useState(false);
 
   const [overviewRange, setOverviewRange] = useState<TimeRangeFilter>('24h');
   const [detailRange, setDetailRange] = useState<TimeRangeFilter>('24h');
@@ -243,6 +249,26 @@ export const App: React.FC = () => {
       setLicenseChecked(true);
       return;
     }
+    void api.getThemeState?.().then((tState) => {
+      const parsedCustom: SurfTheme[] = [];
+      let defId: string | null = null;
+      for (const rec of tState.themes ?? []) {
+        try {
+          const parsed = validateAndMigrateTheme(JSON.parse(rec.themeJson));
+          parsed.id = rec.id;
+          parsed.name = rec.name;
+          parsedCustom.push(parsed);
+          if (rec.isDefault === 1) defId = rec.id;
+        } catch {}
+      }
+      setCustomThemes(parsedCustom);
+      setDefaultThemeId(defId);
+      setThemeSafeMode(Boolean(tState.safeMode));
+      const all = [...BUILT_IN_THEMES, ...parsedCustom];
+      const found = all.find((t) => t.id === tState.activeThemeId) ?? all.find((t) => t.id === defId) ?? BUILT_IN_THEMES[0];
+      setActiveTheme(found);
+      applyThemeToDocument(found, Boolean(tState.safeMode));
+    });
     void api.getLicenseState().then((st) => {
       setLicenseState(st);
       setLicenseChecked(true);
@@ -448,12 +474,9 @@ export const App: React.FC = () => {
           { label: activePage.replace('-', ' ').toUpperCase() },
         ];
 
-  const themeBgClass =
-    settings.theme === 'midnight'
-      ? 'bg-[#0b101b]'
-      : settings.theme === 'oled'
-        ? 'bg-[#050507]'
-        : 'bg-[#09090b]';
+  useEffect(() => {
+    applyThemeToDocument(draftTheme ?? activeTheme, themeSafeMode);
+  }, [draftTheme, activeTheme, themeSafeMode]);
 
   if (!licenseChecked) {
     return (
@@ -493,10 +516,35 @@ export const App: React.FC = () => {
       })),
   ];
 
+  const liveTheme = draftTheme ?? activeTheme;
+  const isRightSidebar = liveTheme.layout.sidebarPosition === 'right';
+
   return (
     <div
-      className={`flex h-screen w-screen overflow-hidden text-zinc-100 ${themeBgClass}`}
+      className={`surf-app-shell relative flex h-screen w-screen overflow-hidden text-zinc-100 ${
+        isRightSidebar ? 'flex-row-reverse' : ''
+      }`}
     >
+      {liveTheme.background.mode === 'image' && liveTheme.background.imageDataUrl && (
+        <div className="pointer-events-none fixed inset-0 z-0">
+          <div
+            className="h-full w-full"
+            style={{
+              backgroundImage: `url(${liveTheme.background.imageDataUrl})`,
+              backgroundSize: liveTheme.background.imageSize,
+              backgroundPosition: liveTheme.background.imagePosition,
+              opacity: liveTheme.background.imageOpacity,
+            }}
+          />
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundColor: liveTheme.background.overlayColor,
+              opacity: liveTheme.background.overlayOpacity,
+            }}
+          />
+        </div>
+      )}
       <Sidebar
         activePage={activePage}
         activeIncidentCount={activeIncidentCount}
@@ -545,7 +593,7 @@ export const App: React.FC = () => {
             downMonitors: monitors.filter((m) => m.status === 'DOWN').length,
             registeredServers: remoteServers.length,
             totalPm2Processes: pm2Count,
-            appVersion: '4.0.0',
+            appVersion: '4.1.0',
           }}
           onManageLicense={() => {
             setSettingsInitialTab('license');
@@ -775,6 +823,50 @@ export const App: React.FC = () => {
                 onUpdateSettings={setSettings}
                 onLicenseUpdated={setLicenseState}
                 onResetDefaults={() => setSettings(DEFAULT_SETTINGS)}
+                themeStudio={{
+                  activeTheme,
+                  draftTheme: draftTheme ?? activeTheme,
+                  customThemes,
+                  defaultThemeId,
+                  safeMode: themeSafeMode,
+                  onDraftChange: (next) => setDraftTheme(next),
+                  onCancelDraft: () => setDraftTheme(null),
+                  onSelectTheme: async (theme) => {
+                    setActiveTheme(theme);
+                    setDraftTheme(null);
+                    await window.surfMonitorAPI?.setActiveThemeId(theme.id);
+                    pushToast('Theme applied', 'success', theme.name);
+                  },
+                  onApplyAndSave: async (theme, makeDefault = false) => {
+                    const savedRec = await window.surfMonitorAPI?.saveCustomTheme({
+                      id: theme.id,
+                      name: theme.name,
+                      themeJson: JSON.stringify(theme),
+                      isDefault: makeDefault,
+                    });
+                    if (savedRec) {
+                      setCustomThemes((prev) => {
+                        const filtered = prev.filter((t) => t.id !== theme.id);
+                        return [theme, ...filtered];
+                      });
+                      if (makeDefault) setDefaultThemeId(theme.id);
+                    }
+                    setActiveTheme(theme);
+                    setDraftTheme(null);
+                    await window.surfMonitorAPI?.setActiveThemeId(theme.id);
+                    pushToast('Theme saved', 'success', theme.name);
+                  },
+                  onDeleteCustomTheme: async (id) => {
+                    await window.surfMonitorAPI?.deleteCustomTheme(id);
+                    setCustomThemes((prev) => prev.filter((t) => t.id !== id));
+                    if (activeTheme.id === id) {
+                      setActiveTheme(BUILT_IN_THEMES[0]);
+                      await window.surfMonitorAPI?.setActiveThemeId(BUILT_IN_THEMES[0].id);
+                    }
+                    if (draftTheme?.id === id) setDraftTheme(null);
+                    pushToast('Theme deleted', 'info');
+                  },
+                }}
               />
             )}
           </div>

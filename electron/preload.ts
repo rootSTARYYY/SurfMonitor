@@ -161,6 +161,16 @@ const surfMonitorAPI = {
   clearLocalLicense: () => ipcRenderer.invoke('license:clear-local'),
   setLicenseAnalytics: (enabled: boolean) =>
     ipcRenderer.invoke('license:set-analytics', enabled),
+  getThemeState: () => ipcRenderer.invoke('themes:get-state'),
+  saveCustomTheme: (input: { id: string; name: string; themeJson: string; isDefault?: boolean }) =>
+    ipcRenderer.invoke('themes:save', input),
+  deleteCustomTheme: (id: string) => ipcRenderer.invoke('themes:delete', id),
+  setActiveThemeId: (id: string) => ipcRenderer.invoke('themes:set-active', id),
+  exportThemeFile: (defaultFileName: string, content: string) =>
+    ipcRenderer.invoke('themes:export-file', defaultFileName, content),
+  importThemeFile: (kind?: 'json' | 'css') =>
+    ipcRenderer.invoke('themes:import-file', kind),
+  pickThemeBgImage: () => ipcRenderer.invoke('themes:pick-bg-image'),
   getPersistedSettings: () => ipcRenderer.invoke('settings:get'),
   savePersistedSettings: (obj: Record<string, unknown>) =>
     ipcRenderer.invoke('settings:save', obj),
