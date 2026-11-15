@@ -46,6 +46,11 @@ import {
 } from './engine/websiteIntelligence';
 import { RemotePoller } from './remote/remotePoller';
 import { SshManager } from './remote/sshManager';
+import { InstallerEngine } from './installer/engine';
+import { VersionDiscoveryService } from './installer/versionDiscovery';
+import { parseAndValidateCommunityManifest } from './installer/community';
+import { DEPLOYMENT_TEMPLATES } from './installer/templates';
+import { AutomationEngine } from './engine/automationEngine';
 import { decryptSecret, encryptSecret } from './security/secrets';
 
 const isDev = !app.isPackaged;
@@ -62,6 +67,9 @@ let scheduler: MonitoringScheduler | null = null;
 let notifier: NotificationService | null = null;
 let heartbeatServer: http.Server | null = null;
 let sshManager: SshManager | null = null;
+let installerEngine: InstallerEngine | null = null;
+let versionDiscovery: VersionDiscoveryService | null = null;
+let automationEngine: AutomationEngine | null = null;
 let remotePoller: RemotePoller | null = null;
 let isQuitting = false;
 let minimizeToTray = true;
@@ -1475,6 +1483,282 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('startup:get-timings', () => startupTimings);
 
+  // --- v5.0.0 Installation Center & Platform IPCs ---
+  ipcMain.handle('installer:get-catalog', () => installerEngine?.getCatalog() ?? []);
+  ipcMain.handle('installer:get-versions', (_e, installerId: string, forceRefresh?: boolean) => versionDiscovery?.getVersions(installerId, Boolean(forceRefresh)));
+  ipcMain.handle('installer:list-templates', () => DEPLOYMENT_TEMPLATES);
+  ipcMain.handle(
+    'installer:preflight',
+    async (_e, installerId: string, serverId: string, config: Record<string, unknown>) => {
+      if (!installerEngine) throw new Error('Installer engine not ready');
+      return installerEngine.runPreflightAndPlan(installerId, serverId, config ?? {});
+    }
+  );
+  ipcMain.handle(
+    'installer:start-job',
+    async (
+      _e,
+      params: {
+        installerId: string;
+        serverId: string;
+        mode: 'one_click' | 'guided';
+        config: Record<string, unknown>;
+        approvedByUser: boolean;
+      }
+    ) => {
+      if (!installerEngine) throw new Error('Installer engine not ready');
+      return installerEngine.startJob(params);
+    }
+  );
+  ipcMain.handle('installer:cancel-job', (_e, jobId: string) => installerEngine?.cancelJob(jobId) ?? false);
+  ipcMain.handle('installer:list-jobs', (_e, limit?: number) => db?.listInstallationJobs(limit ?? 100) ?? []);
+  ipcMain.handle('installer:get-job', (_e, jobId: string) => db?.getInstallationJob(jobId) ?? null);
+  ipcMain.handle('installer:set-policy', (_e, installerId: string, policy: string) => {
+    db?.setInstallerPolicy(installerId, policy);
+    return true;
+  });
+  ipcMain.handle('installer:list-community', () => db?.listCommunityInstallers() ?? []);
+  ipcMain.handle('installer:import-community', async () => {
+    if (!db) throw new Error('DB unavailable');
+    const res = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      filters: [{ name: 'Surf Community Installer', extensions: ['json'] }],
+    });
+    if (res.canceled || res.filePaths.length === 0) return null;
+    const raw = fs.readFileSync(res.filePaths[0], 'utf8');
+    const parsed = parseAndValidateCommunityManifest(raw);
+    if (!parsed.valid || !parsed.manifest) {
+      throw new Error(`Invalid community manifest: ${parsed.errors.join('; ')}`);
+    }
+    const saved = db.saveCommunityInstaller({
+      id: `comm-${parsed.manifest.packageId}`,
+      packageId: parsed.manifest.packageId,
+      name: parsed.manifest.name,
+      publisher: parsed.manifest.publisher.name,
+      version: parsed.manifest.version,
+      sha256: parsed.sha256,
+      manifestJson: raw,
+      trustStatus: 'untrusted',
+    });
+    return { saved, warnings: parsed.warnings };
+  });
+  ipcMain.handle('installer:set-community-trust', (_e, packageId: string, trustStatus: string) =>
+    db?.setCommunityInstallerTrust(packageId, trustStatus) ?? false
+  );
+  ipcMain.handle('installer:delete-community', (_e, packageId: string) =>
+    db?.deleteCommunityInstaller(packageId) ?? false
+  );
+
+  // --- Application Manager ---
+  ipcMain.handle('apps:list', (_e, serverId?: string) => db?.listInstalledApps(serverId) ?? []);
+  ipcMain.handle('apps:action', async (_e, appId: string, action: 'start' | 'stop' | 'restart' | 'logs') => {
+    if (!db || !sshManager) throw new Error('Engine unavailable');
+    const appRec = db.listInstalledApps().find((a) => a.id === appId);
+    if (!appRec) throw new Error('Application not found');
+    const server = db.getRemoteServer(String(appRec.serverId));
+    if (!server) throw new Error('Server not found');
+    const svc = appRec.serviceName ? String(appRec.serviceName) : null;
+    const ctr = appRec.containerName ? String(appRec.containerName) : null;
+    let cmd = '';
+    if (ctr) {
+      cmd = action === 'logs' ? `sudo -n docker logs --tail 100 "${ctr}" 2>&1 || docker logs --tail 100 "${ctr}" 2>&1` : `sudo -n docker ${action} "${ctr}" || docker ${action} "${ctr}"`;
+    } else if (svc) {
+      cmd = action === 'logs' ? `sudo -n journalctl -u "${svc}" -n 100 --no-pager 2>&1` : `sudo -n systemctl ${action} "${svc}"`;
+    } else {
+      throw new Error('No service or container associated with this application.');
+    }
+    const res = await sshManager.execOnServer(server, cmd, { timeoutMs: 30_000 });
+    if (action !== 'logs' && res.code === 0) {
+      db.upsertInstalledApp({
+        ...(appRec as Parameters<typeof db.upsertInstalledApp>[0]),
+        status: action === 'stop' ? 'stopped' : 'running',
+        lastHealthCheckAt: new Date().toISOString(),
+      });
+    }
+    return res;
+  });
+  ipcMain.handle('apps:delete', (_e, appId: string) => db?.deleteInstalledApp(appId) ?? false);
+
+  // --- Interactive SSH Terminal ---
+  ipcMain.handle('terminal:open', async (_e, sessionId: string, serverId: string, cols: number, rows: number) => {
+    if (!db || !sshManager) throw new Error('SSH unavailable');
+    const server = db.getRemoteServer(serverId);
+    if (!server) throw new Error('Server not found');
+    await sshManager.openShellSession(
+      sessionId,
+      server,
+      cols || 100,
+      rows || 28,
+      (chunk) => mainWindow?.webContents.send('terminal:data', { sessionId, data: chunk }),
+      (code) => mainWindow?.webContents.send('terminal:exit', { sessionId, code })
+    );
+    return true;
+  });
+  ipcMain.handle('terminal:write', (_e, sessionId: string, data: string) => sshManager?.writeShellSession(sessionId, data) ?? false);
+  ipcMain.handle('terminal:resize', (_e, sessionId: string, cols: number, rows: number) => sshManager?.resizeShellSession(sessionId, cols, rows) ?? false);
+  ipcMain.handle('terminal:close', (_e, sessionId: string) => {
+    sshManager?.closeShellSession(sessionId);
+    return true;
+  });
+
+  // --- SFTP File Manager ---
+  ipcMain.handle('sftp:list', async (_e, serverId: string, remotePath: string) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    return sshManager.sftpList(server, remotePath);
+  });
+  ipcMain.handle('sftp:read', async (_e, serverId: string, remotePath: string) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    return sshManager.sftpReadFile(server, remotePath);
+  });
+  ipcMain.handle('sftp:write', async (_e, serverId: string, remotePath: string, content: string) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    await sshManager.sftpWriteFile(server, remotePath, content);
+    return true;
+  });
+  ipcMain.handle('sftp:upload', async (_e, serverId: string, remoteDir: string) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    const res = await dialog.showOpenDialog({ properties: ['openFile'] });
+    if (res.canceled || res.filePaths.length === 0) return null;
+    const localPath = res.filePaths[0];
+    const dest = `${remoteDir.replace(/\/$/, '')}/${path.basename(localPath)}`;
+    await sshManager.sftpUploadFile(server, localPath, dest);
+    return dest;
+  });
+  ipcMain.handle('sftp:download', async (_e, serverId: string, remotePath: string) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    const res = await dialog.showSaveDialog({ defaultPath: path.basename(remotePath) });
+    if (res.canceled || !res.filePath) return null;
+    await sshManager.sftpDownloadFile(server, remotePath, res.filePath);
+    return res.filePath;
+  });
+  ipcMain.handle('sftp:mkdir', async (_e, serverId: string, remotePath: string) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    await sshManager.sftpMkdir(server, remotePath);
+    return true;
+  });
+  ipcMain.handle('sftp:rename', async (_e, serverId: string, oldPath: string, newPath: string) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    await sshManager.sftpRename(server, oldPath, newPath);
+    return true;
+  });
+  ipcMain.handle('sftp:stat', async (_e, serverId: string, remotePath: string) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    return sshManager.sftpStat(server, remotePath);
+  });
+  ipcMain.handle('sftp:delete', async (_e, serverId: string, remotePath: string, isDir: boolean) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    await sshManager.sftpDelete(server, remotePath, isDir);
+    return true;
+  });
+
+  // --- Command Center ---
+  ipcMain.handle('commands:list', () => db?.listSavedCommands() ?? []);
+  ipcMain.handle('commands:save', (_e, c: { id: string; name: string; description?: string; commandTemplate: string; variablesJson?: string; isDestructive?: boolean }) =>
+    db?.saveCommand(c)
+  );
+  ipcMain.handle('commands:delete', (_e, id: string) => db?.deleteSavedCommand(id) ?? false);
+  ipcMain.handle('commands:history', () => db?.listCommandExecutions() ?? []);
+  ipcMain.handle('commands:execute', async (_e, serverIds: string[], commandText: string, commandId?: string) => {
+    if (!db || !sshManager) throw new Error('Engine unavailable');
+    const results: Array<{ serverId: string; serverName: string; code: number; output: string }> = [];
+    for (const sid of serverIds) {
+      const server = db.getRemoteServer(sid);
+      if (!server) continue;
+      try {
+        const r = await sshManager.execOnServer(server, commandText, { timeoutMs: 60_000 });
+        const out = [r.stdout, r.stderr].filter(Boolean).join('\n');
+        db.recordCommandExecution({
+          id: `cmdexec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          commandId: commandId ?? null,
+          commandText,
+          serverId: sid,
+          status: r.code === 0 ? 'success' : 'failed',
+          exitCode: r.code,
+          output: out.slice(0, 8000),
+        });
+        results.push({ serverId: sid, serverName: server.name, code: r.code, output: out });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        db.recordCommandExecution({
+          id: `cmdexec-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          commandId: commandId ?? null,
+          commandText,
+          serverId: sid,
+          status: 'failed',
+          exitCode: -1,
+          output: msg,
+        });
+        results.push({ serverId: sid, serverName: server.name, code: -1, output: msg });
+      }
+    }
+    return results;
+  });
+
+  // --- Server Backups & Recovery ---
+  ipcMain.handle('server-backups:list', (_e, serverId?: string) => db?.listServerBackups(serverId) ?? []);
+  ipcMain.handle('server-backups:create', async (_e, input: { serverId: string; backupType: string; targetPath: string; retentionDays?: number }) => {
+    if (!db || !sshManager) throw new Error('Engine unavailable');
+    const server = db.getRemoteServer(input.serverId);
+    if (!server) throw new Error('Server not found');
+    const id = `sbkp-${Date.now()}`;
+    const safeTarget = input.targetPath.replace(/[^a-zA-Z0-9_./-]/g, '');
+    const archivePath = `/tmp/surf-backup-${id}.tar.gz`;
+    const cmd = `sudo -n tar -czf "${archivePath}" "${safeTarget}" 2>&1 || tar -czf "${archivePath}" "${safeTarget}" 2>&1`;
+    const res = await sshManager.execOnServer(server, cmd, { timeoutMs: 180_000 });
+    if (res.code !== 0) throw new Error(`Backup archive failed: ${res.stdout || res.stderr}`);
+    const verifyRes = await sshManager.execOnServer(server, `tar -tzf "${archivePath}" >/dev/null 2>&1 && stat -c%s "${archivePath}" || echo 0`);
+    const sizeBytes = Number(verifyRes.stdout.trim() || '0');
+    const verified = verifyRes.code === 0 && sizeBytes > 0;
+    return db.createServerBackup({
+      id,
+      serverId: input.serverId,
+      backupType: input.backupType,
+      targetPath: safeTarget,
+      archivePath,
+      sizeBytes,
+      verified,
+      verificationNote: verified ? 'tar -tzf integrity check passed' : 'Archive verification failed',
+      retentionDays: input.retentionDays ?? 30,
+    });
+  });
+  ipcMain.handle('server-backups:restore', async (_e, backupId: string) => {
+    if (!db || !sshManager) throw new Error('Engine unavailable');
+    const b = db.listServerBackups().find((x) => x.id === backupId);
+    if (!b) throw new Error('Backup not found');
+    const server = db.getRemoteServer(String(b.serverId));
+    if (!server) throw new Error('Server not found');
+    const res = await sshManager.execOnServer(server, `sudo -n tar -xzf "${String(b.archivePath)}" -C / || tar -xzf "${String(b.archivePath)}" -C /`, { timeoutMs: 180_000 });
+    if (res.code !== 0) throw new Error(`Restore failed: ${res.stderr}`);
+    return true;
+  });
+  ipcMain.handle('server-backups:delete', (_e, id: string) => db?.deleteServerBackup(id) ?? false);
+  ipcMain.handle('server-backups:list-schedules', () => db?.listBackupSchedules() ?? []);
+  ipcMain.handle('server-backups:save-schedule', (_e, s: Record<string, unknown>) => db?.saveBackupSchedule(s));
+  ipcMain.handle('server-backups:delete-schedule', (_e, id: string) => db?.deleteBackupSchedule(id) ?? false);
+
+  // --- Automation Center ---
+  ipcMain.handle('automation:list', () => db?.listAutomationRules() ?? []);
+  ipcMain.handle('automation:save', (_e, r: Record<string, unknown>) => db?.saveAutomationRule(r));
+  ipcMain.handle('automation:delete', (_e, id: string) => db?.deleteAutomationRule(id) ?? false);
+  ipcMain.handle('automation:run-now', (_e, id: string) => automationEngine?.runRuleNow(id));
+  ipcMain.handle('automation:history', (_e, ruleId?: string) => db?.listAutomationExecutions(ruleId) ?? []);
+
+  // --- Server Groups ---
+  ipcMain.handle('server-groups:list', () => db?.listServerGroups() ?? []);
+  ipcMain.handle('server-groups:save', (_e, g: { id: string; name: string; description?: string; color?: string; serverIds?: string[] }) =>
+    db?.saveServerGroup(g)
+  );
+  ipcMain.handle('server-groups:delete', (_e, id: string) => db?.deleteServerGroup(id) ?? false);
+
   // --- Theme Studio (v4.1.0+) ---
   ipcMain.handle('themes:get-state', () => {
     if (!db) return { themes: [], activeThemeId: 'preset-dark', safeMode: false };
@@ -1702,6 +1986,12 @@ app.whenReady().then(async () => {
   sendSplashProgress(74, 'Starting monitoring scheduler...');
   scheduler = new MonitoringScheduler(db, emitToRenderer, notifier);
   sshManager = new SshManager();
+  versionDiscovery = new VersionDiscoveryService(db);
+  installerEngine = new InstallerEngine(db, sshManager, (payload) => {
+    mainWindow?.webContents.send('installer:job-event', payload);
+  });
+  automationEngine = new AutomationEngine(db, sshManager);
+  automationEngine.start();
   remotePoller = new RemotePoller(db, sshManager, notifier, (serverId) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('remote:event', { serverId });

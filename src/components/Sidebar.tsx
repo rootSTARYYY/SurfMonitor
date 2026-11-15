@@ -18,10 +18,18 @@ import {
   PanelLeftOpen,
   SearchCheck,
   Server,
+  Archive,
+  Command,
+  FolderOpen,
+  Package,
+  Rocket,
   Settings,
   ShieldCheck,
+  Terminal,
+  Zap,
 } from 'lucide-react';
 import { PageId } from '@/types';
+import { DEFAULT_SIDEBAR_LAYOUT, SidebarLayoutConfig } from '@/utils/sidebarConfig';
 
 export interface DegradedSystemItem {
   id: string;
@@ -42,6 +50,8 @@ interface SidebarProps {
   onToggleCollapse: () => void;
   onNavigate: (page: PageId) => void;
   onSelectDegradedItem?: (item: DegradedSystemItem) => void;
+  layoutConfig?: SidebarLayoutConfig;
+  onToggleGroupCollapse?: (groupId: string) => void;
 }
 
 interface NavItem {
@@ -88,6 +98,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleCollapse,
   onNavigate,
   onSelectDegradedItem,
+  layoutConfig = DEFAULT_SIDEBAR_LAYOUT,
+  onToggleGroupCollapse,
 }) => {
   const [statusExpanded, setStatusExpanded] = useState(false);
 
@@ -127,12 +139,33 @@ export const Sidebar: React.FC<SidebarProps> = ({
         },
         { id: 'containers', label: 'Docker Containers', icon: Box },
         {
+          id: 'server-groups',
+          label: 'Server Groups',
+          icon: FolderKanban,
+        },
+        {
           id: 'pm2',
           label: 'PM2 Processes',
           icon: Cpu,
           badge: pm2Count > 0 ? pm2Count : undefined,
           badgeTone: 'neutral',
         },
+      ],
+    },
+    {
+      title: 'OPERATIONS',
+      items: [
+        { id: 'terminal', label: 'SSH Terminal', icon: Terminal },
+        { id: 'sftp', label: 'SFTP Files', icon: FolderOpen },
+        { id: 'commands', label: 'Command Center', icon: Command },
+      ],
+    },
+    {
+      title: 'DEPLOYMENT',
+      items: [
+        { id: 'installer', label: 'Installation Center', icon: Rocket },
+        { id: 'apps', label: 'Application Manager', icon: Package },
+        { id: 'templates', label: 'Templates', icon: Layers },
       ],
     },
     {
@@ -150,8 +183,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
       ],
     },
     {
-      title: 'MANAGEMENT',
+      title: 'MAINTENANCE & SETTINGS',
       items: [
+        { id: 'backups', label: 'Backup Center', icon: Archive },
+        { id: 'automation', label: 'Automation Center', icon: Zap },
         { id: 'notifications', label: 'Notifications', icon: Bell },
         { id: 'reports', label: 'Reports & Analytics', icon: BarChart3 },
         { id: 'maintenance', label: 'Maintenance', icon: CalendarClock },
@@ -196,63 +231,108 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
       </div>
 
-      <div className="flex-1 space-y-5 overflow-y-auto px-2.5 py-3">
-        {sections.map((section) => (
-          <div key={section.title}>
-            {!collapsed && (
-              <div className="mb-1.5 px-2 font-mono text-[10px] font-semibold tracking-wider text-zinc-500">
-                {section.title}
-              </div>
-            )}
-            <nav className="space-y-0.5" aria-label={section.title}>
-              {section.items.map((item) => {
-                const Icon = item.icon;
-                const isActive =
-                  activePage === item.id ||
-                  (item.id === 'pm2' && activePage === 'pm2-detail');
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    data-tour={`nav-${item.id}`}
-                    onClick={() => onNavigate(item.id)}
-                    title={collapsed ? item.label : undefined}
-                    className={`group flex w-full items-center rounded py-1.5 text-[13px] font-medium transition-colors ${collapsed ? 'justify-center px-0' : 'justify-between px-2.5'} ${
+      <div className="flex-1 space-y-4 overflow-y-auto px-2.5 py-3">
+        {(() => {
+          const itemMap = new Map<PageId, NavItem>();
+          for (const sec of sections) {
+            for (const it of sec.items) itemMap.set(it.id, it);
+          }
+          const hiddenSet = new Set(layoutConfig.hiddenItemIds);
+          const renderButton = (item: NavItem) => {
+            const Icon = item.icon;
+            const isActive =
+              activePage === item.id ||
+              (item.id === 'pm2' && activePage === 'pm2-detail');
+            return (
+              <button
+                key={item.id}
+                type="button"
+                data-tour={`nav-${item.id}`}
+                onClick={() => onNavigate(item.id)}
+                title={collapsed ? item.label : undefined}
+                className={`group flex w-full items-center rounded py-1.5 text-[13px] font-medium transition-colors ${collapsed ? 'justify-center px-0' : 'justify-between px-2.5'} ${
+                  isActive
+                    ? 'bg-white/[0.07] text-zinc-100'
+                    : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
+                }`}
+              >
+                <span className="flex items-center gap-2.5">
+                  <Icon
+                    className={`h-4 w-4 shrink-0 transition-colors ${
                       isActive
-                        ? 'bg-white/[0.07] text-zinc-100'
-                        : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
+                        ? 'text-emerald-400'
+                        : 'text-zinc-500 group-hover:text-zinc-300'
+                    }`}
+                  />
+                  {!collapsed && <span className="truncate">{item.label}</span>}
+                </span>
+
+                {!collapsed && typeof item.badge === 'number' && (
+                  <span
+                    className={`rounded px-1.5 py-0.5 font-mono text-[10px] leading-none ${
+                      item.badgeTone === 'danger'
+                        ? 'bg-rose-500/15 text-rose-400'
+                        : 'bg-white/[0.06] text-zinc-400'
                     }`}
                   >
-                    <span className="flex items-center gap-2.5">
-                      <Icon
-                        className={`h-4 w-4 shrink-0 transition-colors ${
-                          isActive
-                            ? 'text-emerald-400'
-                            : 'text-zinc-500 group-hover:text-zinc-300'
-                        }`}
-                      />
-                      {!collapsed && (
-                        <span className="truncate">{item.label}</span>
-                      )}
-                    </span>
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            );
+          };
 
-                    {!collapsed && typeof item.badge === 'number' && (
-                      <span
-                        className={`rounded px-1.5 py-0.5 font-mono text-[10px] leading-none ${
-                          item.badgeTone === 'danger'
-                            ? 'bg-rose-500/15 text-rose-400'
-                            : 'bg-white/[0.06] text-zinc-400'
-                        }`}
-                      >
-                        {item.badge}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </nav>
-          </div>
-        ))}
+          const pinnedItems = layoutConfig.pinnedItemIds
+            .filter((id) => !hiddenSet.has(id))
+            .map((id) => itemMap.get(id))
+            .filter((x): x is NavItem => Boolean(x));
+
+          return (
+            <>
+              {pinnedItems.length > 0 && (
+                <div>
+                  {!collapsed && (
+                    <div className="mb-1.5 px-2 font-mono text-[10px] font-semibold tracking-wider text-emerald-400/80">
+                      PINNED
+                    </div>
+                  )}
+                  <nav className="space-y-0.5" aria-label="PINNED">
+                    {pinnedItems.map(renderButton)}
+                  </nav>
+                </div>
+              )}
+
+              {layoutConfig.groups
+                .filter((g) => !g.hidden)
+                .map((grp) => {
+                  const visibleItems = grp.itemIds
+                    .filter((id) => !hiddenSet.has(id))
+                    .map((id) => itemMap.get(id))
+                    .filter((x): x is NavItem => Boolean(x));
+                  if (visibleItems.length === 0) return null;
+                  return (
+                    <div key={grp.id}>
+                      {!collapsed && (
+                        <button
+                          type="button"
+                          onClick={() => onToggleGroupCollapse?.(grp.id)}
+                          className="mb-1.5 flex w-full items-center justify-between px-2 font-mono text-[10px] font-semibold tracking-wider text-zinc-500 hover:text-zinc-300"
+                        >
+                          <span>{grp.title}</span>
+                          <span>{grp.collapsed ? '+' : '−'}</span>
+                        </button>
+                      )}
+                      {(!grp.collapsed || collapsed) && (
+                        <nav className="space-y-0.5" aria-label={grp.title}>
+                          {visibleItems.map(renderButton)}
+                        </nav>
+                      )}
+                    </div>
+                  );
+                })}
+            </>
+          );
+        })()}
       </div>
 
       {/* Expandable System Status Footer */}
@@ -270,7 +350,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-500">
                   {allOperational ? 'System Health' : 'Degraded / Down Services'}
                 </span>
-                <span className="font-mono text-[10px] text-zinc-600">v4.2.1</span>
+                <span className="font-mono text-[10px] text-zinc-600">v5.0.0</span>
               </div>
               {allOperational ? (
                 <p className="px-1 py-1.5 font-mono text-[11px] text-emerald-400">

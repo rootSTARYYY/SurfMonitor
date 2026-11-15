@@ -168,6 +168,89 @@ const surfMonitorAPI = {
   importThemeFile: (kind: 'json' | 'css') =>
     ipcRenderer.invoke('themes:import-file', kind),
   pickThemeBgImage: () => ipcRenderer.invoke('themes:pick-bg-image'),
+
+  // v5.0.0 Platform APIs
+  getInstallerCatalog: () => ipcRenderer.invoke('installer:get-catalog'),
+  getInstallerVersions: (installerId: string, forceRefresh?: boolean) => ipcRenderer.invoke('installer:get-versions', installerId, forceRefresh),
+  listDeploymentTemplates: () => ipcRenderer.invoke('installer:list-templates'),
+  runInstallerPreflight: (installerId: string, serverId: string, config: Record<string, unknown>) =>
+    ipcRenderer.invoke('installer:preflight', installerId, serverId, config),
+  startInstallationJob: (params: Record<string, unknown>) =>
+    ipcRenderer.invoke('installer:start-job', params),
+  cancelInstallationJob: (jobId: string) => ipcRenderer.invoke('installer:cancel-job', jobId),
+  listInstallationJobs: (limit?: number) => ipcRenderer.invoke('installer:list-jobs', limit),
+  getInstallationJob: (jobId: string) => ipcRenderer.invoke('installer:get-job', jobId),
+  setInstallerPolicy: (installerId: string, policy: string) =>
+    ipcRenderer.invoke('installer:set-policy', installerId, policy),
+  listCommunityInstallers: () => ipcRenderer.invoke('installer:list-community'),
+  importCommunityInstaller: () => ipcRenderer.invoke('installer:import-community'),
+  setCommunityInstallerTrust: (packageId: string, trustStatus: string) =>
+    ipcRenderer.invoke('installer:set-community-trust', packageId, trustStatus),
+  deleteCommunityInstaller: (packageId: string) =>
+    ipcRenderer.invoke('installer:delete-community', packageId),
+  onInstallerJobEvent: (cb: (payload: unknown) => void): (() => void) => {
+    const l = (_e: Electron.IpcRendererEvent, p: unknown) => cb(p);
+    ipcRenderer.on('installer:job-event', l);
+    return () => ipcRenderer.removeListener('installer:job-event', l);
+  },
+
+  listInstalledApps: (serverId?: string) => ipcRenderer.invoke('apps:list', serverId),
+  runInstalledAppAction: (appId: string, action: string) => ipcRenderer.invoke('apps:action', appId, action),
+  deleteInstalledApp: (appId: string) => ipcRenderer.invoke('apps:delete', appId),
+
+  openTerminalSession: (sessionId: string, serverId: string, cols: number, rows: number) =>
+    ipcRenderer.invoke('terminal:open', sessionId, serverId, cols, rows),
+  writeTerminalSession: (sessionId: string, data: string) =>
+    ipcRenderer.invoke('terminal:write', sessionId, data),
+  resizeTerminalSession: (sessionId: string, cols: number, rows: number) =>
+    ipcRenderer.invoke('terminal:resize', sessionId, cols, rows),
+  closeTerminalSession: (sessionId: string) =>
+    ipcRenderer.invoke('terminal:close', sessionId),
+  onTerminalData: (cb: (payload: { sessionId: string; data: string }) => void): (() => void) => {
+    const l = (_e: Electron.IpcRendererEvent, p: { sessionId: string; data: string }) => cb(p);
+    ipcRenderer.on('terminal:data', l);
+    return () => ipcRenderer.removeListener('terminal:data', l);
+  },
+  onTerminalExit: (cb: (payload: { sessionId: string; code?: number }) => void): (() => void) => {
+    const l = (_e: Electron.IpcRendererEvent, p: { sessionId: string; code?: number }) => cb(p);
+    ipcRenderer.on('terminal:exit', l);
+    return () => ipcRenderer.removeListener('terminal:exit', l);
+  },
+
+  sftpList: (serverId: string, remotePath: string) => ipcRenderer.invoke('sftp:list', serverId, remotePath),
+  sftpRead: (serverId: string, remotePath: string) => ipcRenderer.invoke('sftp:read', serverId, remotePath),
+  sftpWrite: (serverId: string, remotePath: string, content: string) => ipcRenderer.invoke('sftp:write', serverId, remotePath, content),
+  sftpUpload: (serverId: string, remoteDir: string) => ipcRenderer.invoke('sftp:upload', serverId, remoteDir),
+  sftpDownload: (serverId: string, remotePath: string) => ipcRenderer.invoke('sftp:download', serverId, remotePath),
+  sftpMkdir: (serverId: string, remotePath: string) => ipcRenderer.invoke('sftp:mkdir', serverId, remotePath),
+  sftpRename: (serverId: string, oldPath: string, newPath: string) => ipcRenderer.invoke('sftp:rename', serverId, oldPath, newPath),
+  sftpStat: (serverId: string, remotePath: string) => ipcRenderer.invoke('sftp:stat', serverId, remotePath),
+  sftpDelete: (serverId: string, remotePath: string, isDir: boolean) => ipcRenderer.invoke('sftp:delete', serverId, remotePath, isDir),
+
+  listSavedCommands: () => ipcRenderer.invoke('commands:list'),
+  saveCommand: (c: Record<string, unknown>) => ipcRenderer.invoke('commands:save', c),
+  deleteSavedCommand: (id: string) => ipcRenderer.invoke('commands:delete', id),
+  executeMultiServerCommand: (serverIds: string[], commandText: string, commandId?: string) =>
+    ipcRenderer.invoke('commands:execute', serverIds, commandText, commandId),
+  listCommandExecutions: () => ipcRenderer.invoke('commands:history'),
+
+  listServerBackups: (serverId?: string) => ipcRenderer.invoke('server-backups:list', serverId),
+  createServerBackup: (input: Record<string, unknown>) => ipcRenderer.invoke('server-backups:create', input),
+  restoreServerBackup: (backupId: string) => ipcRenderer.invoke('server-backups:restore', backupId),
+  deleteServerBackup: (id: string) => ipcRenderer.invoke('server-backups:delete', id),
+  listBackupSchedules: () => ipcRenderer.invoke('server-backups:list-schedules'),
+  saveBackupSchedule: (s: Record<string, unknown>) => ipcRenderer.invoke('server-backups:save-schedule', s),
+  deleteBackupSchedule: (id: string) => ipcRenderer.invoke('server-backups:delete-schedule', id),
+
+  listAutomationRules: () => ipcRenderer.invoke('automation:list'),
+  saveAutomationRule: (r: Record<string, unknown>) => ipcRenderer.invoke('automation:save', r),
+  deleteAutomationRule: (id: string) => ipcRenderer.invoke('automation:delete', id),
+  runAutomationRuleNow: (id: string) => ipcRenderer.invoke('automation:run-now', id),
+  listAutomationExecutions: (ruleId?: string) => ipcRenderer.invoke('automation:history', ruleId),
+
+  listServerGroups: () => ipcRenderer.invoke('server-groups:list'),
+  saveServerGroup: (g: Record<string, unknown>) => ipcRenderer.invoke('server-groups:save', g),
+  deleteServerGroup: (id: string) => ipcRenderer.invoke('server-groups:delete', id),
   onMonitorEvent: (callback: (event: unknown) => void): (() => void) => {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
       callback(payload);

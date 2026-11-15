@@ -20,6 +20,15 @@ export type PageId =
   | 'remote-services'
   | 'pm2'
   | 'pm2-detail'
+  | 'server-groups'
+  | 'terminal'
+  | 'sftp'
+  | 'commands'
+  | 'installer'
+  | 'apps'
+  | 'templates'
+  | 'backups'
+  | 'automation'
   | 'settings';
 
 export type CheckState = 'UP' | 'DEGRADED' | 'DOWN';
@@ -544,6 +553,230 @@ export interface Pm2LogsPayload {
   stderr: { exists: boolean; lines: string[] };
 }
 
+
+export interface InstallerConfigField {
+  key: string;
+  label: string;
+  type: 'text' | 'number' | 'password' | 'boolean' | 'select';
+  required?: boolean;
+  defaultValue?: string | number | boolean;
+  placeholder?: string;
+  description?: string;
+  options?: Array<{ label: string; value: string }>;
+  advancedOnly?: boolean;
+  secret?: boolean;
+}
+
+export interface DiscoveredVersionDTO {
+  tag: string;
+  version: string;
+  channel: 'stable' | 'beta' | 'rc' | 'older';
+  publishedAt: string | null;
+  releaseNotesUrl: string | null;
+}
+
+export interface VersionDiscoveryResultDTO {
+  installerId: string;
+  upstreamSource: string;
+  upstreamUrl: string;
+  latestStable: DiscoveredVersionDTO | null;
+  latestBeta: DiscoveredVersionDTO | null;
+  versions: DiscoveredVersionDTO[];
+  fetchedAt: string;
+  fromCache: boolean;
+  staleReason?: string;
+}
+
+export interface InstallerCatalogItem {
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  category: string;
+  publisher: string;
+  source: 'official' | 'community';
+  verificationStatus: 'production_ready' | 'beta' | 'experimental' | 'community';
+  supportedOs: string[];
+  supportedArch: string[];
+  minDiskMb: number;
+  minRamMb: number;
+  requiredPorts: number[];
+  dependencies: string[];
+  requiredPrivileges: 'root_or_sudo' | 'user';
+  supportsOneClick: boolean;
+  supportsGuided: boolean;
+  rollbackAvailable: boolean;
+  rollbackNote: string;
+  docsUrl?: string;
+  configSchema: InstallerConfigField[];
+  policy: 'always_review' | 'automatic' | 'per_installer';
+  installedCount?: number;
+}
+
+export interface PreflightResultDTO {
+  passed: boolean;
+  osName: string;
+  osVersion: string;
+  arch: string;
+  pkgManager: string;
+  freeDiskMb: number;
+  freeMemMb: number;
+  isRootOrSudo: boolean;
+  checks: Array<{
+    id: string;
+    label: string;
+    passed: boolean;
+    actual: string;
+    required: string;
+    blocking: boolean;
+  }>;
+}
+
+export interface DeploymentPlanDTO {
+  installerId: string;
+  installerName: string;
+  version: string;
+  serverId: string;
+  serverName: string;
+  installDir: string;
+  packages: string[];
+  servicesToCreate: string[];
+  portsToOpen: number[];
+  filesToModify: string[];
+  configSummary: Array<{ label: string; value: string; secret?: boolean }>;
+  requiredPrivileges: 'root_or_sudo' | 'user';
+  estimatedDiskMb: number;
+  estimatedRamMb: number;
+  rollbackAvailable: boolean;
+  rollbackNote: string;
+  hasDestructiveOperations: boolean;
+  destructiveWarnings: string[];
+}
+
+export interface InstallationJobDTO {
+  id: string;
+  serverId: string;
+  installerId: string;
+  installerName: string;
+  version: string;
+  source: string;
+  mode: string;
+  status: string;
+  approvalPolicy: string;
+  approvedByUser: number;
+  configJson: string;
+  planJson: string;
+  preflightJson: string;
+  logs: string;
+  errorMessage: string | null;
+  failedStep: string | null;
+  recoveryInstructions: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+}
+
+export interface InstalledAppDTO {
+  id: string;
+  serverId: string;
+  installerId: string;
+  name: string;
+  version: string;
+  source: string;
+  installDir: string;
+  serviceName: string | null;
+  containerName: string | null;
+  port: number | null;
+  url: string | null;
+  status: string;
+  lastHealthCheckAt: string | null;
+  lastHealthStatus: string | null;
+  updateAvailable: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DeploymentTemplateDTO {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  installerIds: string[];
+  estimatedRamMb: number;
+  estimatedDiskMb: number;
+  variables: Array<{ key: string; label: string; defaultValue: string; secret?: boolean }>;
+  notes: string;
+}
+
+export interface SftpEntryDTO {
+  name: string;
+  path: string;
+  isDir: boolean;
+  size: number;
+  mtime: number;
+  permissions: string;
+}
+
+export interface SavedCommandDTO {
+  id: string;
+  name: string;
+  description: string;
+  commandTemplate: string;
+  variablesJson: string;
+  isDestructive: number;
+  createdAt: string;
+}
+
+export interface ServerBackupDTO {
+  id: string;
+  serverId: string;
+  appId: string | null;
+  backupType: string;
+  targetPath: string;
+  archivePath: string;
+  sizeBytes: number;
+  verified: number;
+  verificationNote: string | null;
+  retentionDays: number;
+  createdAt: string;
+}
+
+export interface BackupScheduleDTO {
+  id: string;
+  serverId: string;
+  backupType: string;
+  targetPath: string;
+  intervalHours: number;
+  retentionDays: number;
+  enabled: number;
+  lastRunAt: string | null;
+}
+
+export interface AutomationRuleDTO {
+  id: string;
+  name: string;
+  description: string;
+  serverId: string;
+  triggerType: string;
+  conditionJson: string;
+  actionType: string;
+  actionConfigJson: string;
+  cooldownSeconds: number;
+  maxRetries: number;
+  enabled: number;
+  lastRunAt: string | null;
+  lastStatus: string | null;
+  lastError: string | null;
+}
+
+export interface ServerGroupDTO {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  serverIds: string[];
+}
+
 declare global {
   interface Window {
     surfMonitorAPI?: {
@@ -776,6 +1009,70 @@ declare global {
       exportThemeFile: (defaultFilename: string, content: string) => Promise<string | null>;
       importThemeFile: (kind: 'json' | 'css') => Promise<string | null>;
       pickThemeBgImage: () => Promise<string | null>;
+      getInstallerCatalog: () => Promise<InstallerCatalogItem[]>;
+      getInstallerVersions: (installerId: string, forceRefresh?: boolean) => Promise<VersionDiscoveryResultDTO>;
+      listDeploymentTemplates: () => Promise<DeploymentTemplateDTO[]>;
+      runInstallerPreflight: (
+        installerId: string,
+        serverId: string,
+        config: Record<string, unknown>
+      ) => Promise<{ preflight: PreflightResultDTO; plan: DeploymentPlanDTO; policy: string }>;
+      startInstallationJob: (params: Record<string, unknown>) => Promise<InstallationJobDTO>;
+      cancelInstallationJob: (jobId: string) => Promise<boolean>;
+      listInstallationJobs: (limit?: number) => Promise<InstallationJobDTO[]>;
+      getInstallationJob: (jobId: string) => Promise<InstallationJobDTO | null>;
+      setInstallerPolicy: (installerId: string, policy: string) => Promise<boolean>;
+      listCommunityInstallers: () => Promise<Array<Record<string, unknown>>>;
+      importCommunityInstaller: () => Promise<{ saved: Record<string, unknown>; warnings: string[] } | null>;
+      setCommunityInstallerTrust: (packageId: string, trustStatus: string) => Promise<boolean>;
+      deleteCommunityInstaller: (packageId: string) => Promise<boolean>;
+      onInstallerJobEvent: (cb: (payload: { jobId: string; status: string; logLine?: string }) => void) => () => void;
+
+      listInstalledApps: (serverId?: string) => Promise<InstalledAppDTO[]>;
+      runInstalledAppAction: (appId: string, action: 'start' | 'stop' | 'restart' | 'logs') => Promise<{ code: number; stdout: string; stderr: string }>;
+      deleteInstalledApp: (appId: string) => Promise<boolean>;
+
+      openTerminalSession: (sessionId: string, serverId: string, cols: number, rows: number) => Promise<boolean>;
+      writeTerminalSession: (sessionId: string, data: string) => Promise<boolean>;
+      resizeTerminalSession: (sessionId: string, cols: number, rows: number) => Promise<boolean>;
+      closeTerminalSession: (sessionId: string) => Promise<boolean>;
+      onTerminalData: (cb: (payload: { sessionId: string; data: string }) => void) => () => void;
+      onTerminalExit: (cb: (payload: { sessionId: string; code?: number }) => void) => () => void;
+
+      sftpList: (serverId: string, remotePath: string) => Promise<SftpEntryDTO[]>;
+      sftpRead: (serverId: string, remotePath: string) => Promise<string>;
+      sftpWrite: (serverId: string, remotePath: string, content: string) => Promise<boolean>;
+      sftpUpload: (serverId: string, remoteDir: string) => Promise<string | null>;
+      sftpDownload: (serverId: string, remotePath: string) => Promise<string | null>;
+      sftpMkdir: (serverId: string, remotePath: string) => Promise<boolean>;
+      sftpRename: (serverId: string, oldPath: string, newPath: string) => Promise<boolean>;
+      sftpStat: (serverId: string, remotePath: string) => Promise<{ size: number; mtime: number; permissions: string; isDir: boolean }>;
+      sftpDelete: (serverId: string, remotePath: string, isDir: boolean) => Promise<boolean>;
+
+      listSavedCommands: () => Promise<SavedCommandDTO[]>;
+      saveCommand: (c: Record<string, unknown>) => Promise<SavedCommandDTO>;
+      deleteSavedCommand: (id: string) => Promise<boolean>;
+      executeMultiServerCommand: (serverIds: string[], commandText: string, commandId?: string) => Promise<Array<{ serverId: string; serverName: string; code: number; output: string }>>;
+      listCommandExecutions: () => Promise<Array<Record<string, unknown>>>;
+
+      listServerBackups: (serverId?: string) => Promise<ServerBackupDTO[]>;
+      createServerBackup: (input: Record<string, unknown>) => Promise<ServerBackupDTO>;
+      restoreServerBackup: (backupId: string) => Promise<boolean>;
+      deleteServerBackup: (id: string) => Promise<boolean>;
+      listBackupSchedules: () => Promise<BackupScheduleDTO[]>;
+      saveBackupSchedule: (s: Record<string, unknown>) => Promise<BackupScheduleDTO>;
+      deleteBackupSchedule: (id: string) => Promise<boolean>;
+
+      listAutomationRules: () => Promise<AutomationRuleDTO[]>;
+      saveAutomationRule: (r: Record<string, unknown>) => Promise<AutomationRuleDTO>;
+      deleteAutomationRule: (id: string) => Promise<boolean>;
+      runAutomationRuleNow: (id: string) => Promise<{ ok: boolean; output: string }>;
+      listAutomationExecutions: (ruleId?: string) => Promise<Array<Record<string, unknown>>>;
+
+      listServerGroups: () => Promise<ServerGroupDTO[]>;
+      saveServerGroup: (g: Record<string, unknown>) => Promise<ServerGroupDTO>;
+      deleteServerGroup: (id: string) => Promise<boolean>;
+
       onMonitorEvent: (
         callback: (event: SchedulerEventPayload) => void
       ) => () => void;

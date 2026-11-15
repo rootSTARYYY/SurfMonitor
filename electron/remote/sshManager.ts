@@ -1,10 +1,11 @@
 import crypto from 'node:crypto';
+import { StringDecoder } from 'node:string_decoder';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { Client, ConnectConfig } from 'ssh2';
+import { Client, ClientChannel, ConnectConfig, SFTPWrapper } from 'ssh2';
 import { RemoteServerRecord } from '../db/database';
-import { decryptSecret } from '../security/secrets';
+import { decryptSecret, redactSecrets } from '../security/secrets';
 
 export interface ConnectionStageDiagnostics {
   sshConnection: 'ok' | 'failed';
@@ -503,7 +504,352 @@ export class SshManager {
     );
   }
 
+  private shells = new Map<string, ClientChannel>();
+  private shellDecoders = new Map<string, StringDecoder>();
+  private sftpPool = new Map<string, SFTPWrapper>();
+
+  public async execOnServer(
+    server: RemoteServerRecord,
+    command: string,
+    opts?: {
+      timeoutMs?: number;
+      secrets?: string[];
+      onStdout?: (chunk: string) => void;
+      onStderr?: (chunk: string) => void;
+      signal?: AbortSignal;
+    }
+  ): Promise<{ code: number; stdout: string; stderr: string }> {
+    const client = await this.getConnectedClient(server);
+    const secrets = opts?.secrets ?? [];
+    const timeoutMs = opts?.timeoutMs ?? 120_000;
+
+    return new Promise((resolve, reject) => {
+      if (opts?.signal?.aborted) {
+        return reject(new Error('Operation cancelled before execution'));
+      }
+      client.exec(command, (err, stream) => {
+        if (err) return reject(err);
+        let stdout = '';
+        let stderr = '';
+        let settled = false;
+
+        const timer = setTimeout(() => {
+          if (!settled) {
+            settled = true;
+            try { stream.close(); } catch {}
+            reject(new Error(`Command timed out after ${Math.round(timeoutMs / 1000)}s`));
+          }
+        }, timeoutMs);
+
+        const onAbort = () => {
+          if (!settled) {
+            settled = true;
+            clearTimeout(timer);
+            try { stream.close(); } catch {}
+            reject(new Error('Operation cancelled by user'));
+          }
+        };
+        opts?.signal?.addEventListener('abort', onAbort, { once: true });
+
+        stream.on('data', (d: Buffer) => {
+          const text = redactSecrets(d.toString('utf8'), secrets);
+          stdout += text;
+          opts?.onStdout?.(text);
+        });
+        stream.stderr.on('data', (d: Buffer) => {
+          const text = redactSecrets(d.toString('utf8'), secrets);
+          stderr += text;
+          opts?.onStderr?.(text);
+        });
+        stream.on('close', (code: number) => {
+          clearTimeout(timer);
+          opts?.signal?.removeEventListener('abort', onAbort);
+          if (!settled) {
+            settled = true;
+            resolve({ code: code ?? 0, stdout, stderr });
+          }
+        });
+      });
+    });
+  }
+
+  public async inspectServerSystem(server: RemoteServerRecord): Promise<{
+    osName: string;
+    osVersion: string;
+    arch: string;
+    pkgManager: string;
+    freeDiskMb: number;
+    freeMemMb: number;
+    isRootOrSudo: boolean;
+    listeningPorts: number[];
+  }> {
+    const probe = [
+      'echo "__OS__=$(. /etc/os-release 2>/dev/null && echo \"$ID|$VERSION_ID\" || uname -s)"',
+      'echo "__ARCH__=$(uname -m)"',
+      'echo "__UID__=$(id -u)"',
+      'echo "__SUDO__=$(sudo -n true 2>/dev/null && echo yes || echo no)"',
+      'echo "__PKG__=$(command -v apt-get >/dev/null && echo apt-get || (command -v dnf >/dev/null && echo dnf || (command -v yum >/dev/null && echo yum || echo unknown)))"',
+      `echo "__DISK__=$(df -Pm / | awk 'NR==2{print $4}')"`,
+      `echo "__MEM__=$(free -m | awk '/^Mem:/{print $7}')"`,
+      `echo "__PORTS__=$(ss -tuln 2>/dev/null | awk 'NR>1{print $5}' | sed 's/.*://' | sort -un | tr '\\n' ',')"`,
+    ].join(' && ');
+
+    const res = await this.execOnServer(server, probe, { timeoutMs: 15000 });
+    const lines = res.stdout.split(/\r?\n/);
+    const getVal = (prefix: string) => {
+      const line = lines.find((l) => l.startsWith(prefix));
+      return line ? line.slice(prefix.length).trim() : '';
+    };
+    const osPair = getVal('__OS__=').split('|');
+    const osName = (osPair[0] || 'linux').toLowerCase();
+    const osVersion = osPair[1] || '';
+    const arch = getVal('__ARCH__=') || 'x86_64';
+    const uid = Number(getVal('__UID__=') || '1000');
+    const hasSudo = getVal('__SUDO__=') === 'yes';
+    const pkgManager = getVal('__PKG__=') || 'unknown';
+    const freeDiskMb = Number(getVal('__DISK__=') || '0') || 0;
+    const freeMemMb = Number(getVal('__MEM__=') || '0') || 0;
+    const portsRaw = getVal('__PORTS__=');
+    const listeningPorts = portsRaw
+      .split(',')
+      .map((p) => Number(p.trim()))
+      .filter((n) => Number.isFinite(n) && n > 0);
+
+    return {
+      osName,
+      osVersion,
+      arch,
+      pkgManager,
+      freeDiskMb,
+      freeMemMb,
+      isRootOrSudo: uid === 0 || hasSudo,
+      listeningPorts,
+    };
+  }
+
+  public async openShellSession(
+    sessionId: string,
+    server: RemoteServerRecord,
+    cols: number,
+    rows: number,
+    onData: (chunk: string) => void,
+    onExit: (code?: number) => void,
+    encoding: BufferEncoding = 'utf8'
+  ): Promise<void> {
+    const client = await this.getConnectedClient(server);
+    return new Promise((resolve, reject) => {
+      client.shell(
+        {
+          term: 'xterm-256color',
+          cols,
+          rows,
+        },
+        {
+          env: {
+            TERM: 'xterm-256color',
+            LANG: 'en_US.UTF-8',
+            LC_ALL: 'en_US.UTF-8',
+          },
+        },
+        (err, stream) => {
+          if (err) return reject(err);
+          const decoder = new StringDecoder(encoding);
+          this.shells.set(sessionId, stream);
+          this.shellDecoders.set(sessionId, decoder);
+          stream.on('data', (d: Buffer) => {
+            const text = decoder.write(d);
+            if (text) onData(text);
+          });
+          stream.stderr?.on('data', (d: Buffer) => {
+            const text = decoder.write(d);
+            if (text) onData(text);
+          });
+          stream.on('close', (code: number) => {
+            const rem = decoder.end();
+            if (rem) onData(rem);
+            this.shells.delete(sessionId);
+            this.shellDecoders.delete(sessionId);
+            onExit(code);
+          });
+          resolve();
+        }
+      );
+    });
+  }
+
+  public writeShellSession(sessionId: string, data: string): boolean {
+    const stream = this.shells.get(sessionId);
+    if (!stream) return false;
+    stream.write(data);
+    return true;
+  }
+
+  public resizeShellSession(sessionId: string, cols: number, rows: number): boolean {
+    const stream = this.shells.get(sessionId);
+    if (!stream) return false;
+    stream.setWindow(rows, cols, 0, 0);
+    return true;
+  }
+
+  public closeShellSession(sessionId: string): void {
+    const stream = this.shells.get(sessionId);
+    if (stream) {
+      try { stream.end(); } catch {}
+      this.shells.delete(sessionId);
+    }
+  }
+
+  private async getPooledSftp(server: RemoteServerRecord): Promise<SFTPWrapper> {
+    const existing = this.sftpPool.get(server.id);
+    if (existing) return existing;
+    const client = await this.getConnectedClient(server);
+    return new Promise((resolve, reject) => {
+      client.sftp((err, sftp) => {
+        if (err) return reject(err);
+        sftp.once('close', () => {
+          if (this.sftpPool.get(server.id) === sftp) this.sftpPool.delete(server.id);
+        });
+        sftp.once('end', () => {
+          if (this.sftpPool.get(server.id) === sftp) this.sftpPool.delete(server.id);
+        });
+        this.sftpPool.set(server.id, sftp);
+        resolve(sftp);
+      });
+    });
+  }
+
+  public async sftpList(
+    server: RemoteServerRecord,
+    remotePath: string
+  ): Promise<Array<{ name: string; path: string; isDir: boolean; size: number; mtime: number; permissions: string }>> {
+    const sftp = await this.getPooledSftp(server);
+    const target = remotePath || '/';
+    return new Promise((resolve, reject) => {
+      sftp.readdir(target, (err, list) => {
+        if (err) return reject(err);
+        const mapped = list
+          .map((item) => {
+            const mode = item.attrs.mode ?? 0;
+            const isDir = (mode & 0o170000) === 0o040000;
+            const joined = target === '/' ? `/${item.filename}` : `${target.replace(/\/$/, '')}/${item.filename}`;
+            return {
+              name: item.filename,
+              path: joined,
+              isDir,
+              size: item.attrs.size ?? 0,
+              mtime: (item.attrs.mtime ?? 0) * 1000,
+              permissions: (mode & 0o777).toString(8).padStart(3, '0'),
+            };
+          })
+          .sort((a, b) => Number(b.isDir) - Number(a.isDir) || a.name.localeCompare(b.name));
+        resolve(mapped);
+      });
+    });
+  }
+
+  public async sftpReadFile(server: RemoteServerRecord, remotePath: string, maxBytes = 512_000): Promise<string> {
+    const sftp = await this.getPooledSftp(server);
+    return new Promise((resolve, reject) => {
+      const stream = sftp.createReadStream(remotePath, { start: 0, end: maxBytes - 1 });
+      const chunks: Buffer[] = [];
+      stream.on('data', (c: Buffer) => chunks.push(c));
+      stream.on('error', (e: Error) => { reject(e); });
+      stream.on('end', () => { resolve(Buffer.concat(chunks).toString('utf8')); });
+    });
+  }
+
+  public async sftpWriteFile(server: RemoteServerRecord, remotePath: string, content: string): Promise<void> {
+    const sftp = await this.getPooledSftp(server);
+    return new Promise((resolve, reject) => {
+      const stream = sftp.createWriteStream(remotePath);
+      stream.on('error', (e: Error) => { reject(e); });
+      stream.on('close', () => { resolve(); });
+      stream.end(Buffer.from(content, 'utf8'));
+    });
+  }
+
+  public async sftpUploadFile(server: RemoteServerRecord, localPath: string, remotePath: string): Promise<void> {
+    const sftp = await this.getPooledSftp(server);
+    return new Promise((resolve, reject) => {
+      sftp.fastPut(localPath, remotePath, (err) => {
+        if (err) return reject(err);
+        resolve();
+      });
+    });
+  }
+
+  public async sftpDownloadFile(server: RemoteServerRecord, remotePath: string, localPath: string): Promise<void> {
+    const sftp = await this.getPooledSftp(server);
+    return new Promise((resolve, reject) => {
+      sftp.fastGet(remotePath, localPath, (err) => {
+        if (err) return reject(err);
+        resolve();
+      });
+    });
+  }
+
+  public async sftpMkdir(server: RemoteServerRecord, remotePath: string): Promise<void> {
+    const sftp = await this.getPooledSftp(server);
+    return new Promise((resolve, reject) => {
+      sftp.mkdir(remotePath, (err) => {
+        if (err) return reject(err);
+        resolve();
+      });
+    });
+  }
+
+  public async sftpDelete(server: RemoteServerRecord, remotePath: string, isDir: boolean): Promise<void> {
+    const sftp = await this.getPooledSftp(server);
+    return new Promise((resolve, reject) => {
+      const fn = isDir ? sftp.rmdir.bind(sftp) : sftp.unlink.bind(sftp);
+      fn(remotePath, (err) => {
+        if (err) return reject(err);
+        resolve();
+      });
+    });
+  }
+
+  public async sftpChmod(server: RemoteServerRecord, remotePath: string, modeOctal: string): Promise<void> {
+    const sftp = await this.getPooledSftp(server);
+    const mode = parseInt(modeOctal, 8);
+    return new Promise((resolve, reject) => {
+      sftp.chmod(remotePath, mode, (err) => {
+        if (err) return reject(err);
+        resolve();
+      });
+    });
+  }
+
+
+  public async sftpRename(server: RemoteServerRecord, oldPath: string, newPath: string): Promise<void> {
+    const sftp = await this.getPooledSftp(server);
+    return new Promise((resolve, reject) => {
+      sftp.rename(oldPath, newPath, (err) => {
+        if (err) return reject(err);
+        resolve();
+      });
+    });
+  }
+
+  public async sftpStat(server: RemoteServerRecord, remotePath: string): Promise<{ size: number; mtime: number; permissions: string; isDir: boolean }> {
+    const sftp = await this.getPooledSftp(server);
+    return new Promise((resolve, reject) => {
+      sftp.stat(remotePath, (err, stats) => {
+        if (err) return reject(err);
+        const mode = stats.mode ?? 0;
+        resolve({
+          size: stats.size ?? 0,
+          mtime: (stats.mtime ?? 0) * 1000,
+          permissions: (mode & 0o777).toString(8).padStart(3, '0'),
+          isDir: (mode & 0o170000) === 0o040000,
+        });
+      });
+    });
+  }
+
   public disconnect(serverId: string): void {
+    const sftp = this.sftpPool.get(serverId);
+    if (sftp) { try { sftp.end(); } catch {} this.sftpPool.delete(serverId); }
     const client = this.pool.get(serverId);
     if (client) {
       client.end();
@@ -512,6 +858,7 @@ export class SshManager {
   }
 
   public disconnectAll(): void {
+    for (const id of this.shells.keys()) this.closeShellSession(id);
     for (const c of this.pool.values()) {
       c.end();
     }

@@ -30,7 +30,7 @@ const TOUR_STEPS: TourStep[] = [
     id: 'welcome',
     targetSelector: null,
     placement: 'center',
-    badge: '100% Free · Local-First · v4.2.2',
+    badge: '100% Free · Local-First · v5.0.0',
     title: 'Welcome to Surf Monitor',
     description:
       'Let’s take a quick 30-second tour of your live dashboard. Surf Monitor runs locally on your machine with SQLite persistence—no accounts, no trials, and no cloud lock-in.',

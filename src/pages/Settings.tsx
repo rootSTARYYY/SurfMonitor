@@ -26,6 +26,7 @@ import {
 import { formatTimestamp } from '@/utils/format';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { ThemeStudio } from '@/components/ThemeStudio';
+import { ALL_NAV_ITEMS, resetSidebarLayout, SidebarLayoutConfig } from '@/utils/sidebarConfig';
 import { SurfTheme } from '@/theme/themeEngine';
 
 interface SettingsProps {
@@ -53,6 +54,7 @@ interface SettingsProps {
 export type SettingsTab =
   | 'general'
   | 'appearance'
+  | 'navigation'
   | 'monitoring'
   | 'notifications'
   | 'servers'
@@ -69,6 +71,7 @@ const CATEGORIES: Array<{
 }> = [
   { id: 'general', label: 'General', keywords: 'startup tray close minimize', icon: Sliders },
   { id: 'appearance', label: 'Appearance', keywords: 'theme dark oled density motion', icon: Palette },
+  { id: 'navigation', label: 'Sidebar & Workspace', keywords: 'sidebar navigation tabs hide reorder groups pinned landing', icon: Sliders },
   { id: 'monitoring', label: 'Monitoring', keywords: 'interval timeout retries status codes retention', icon: Activity },
   { id: 'notifications', label: 'Notifications', keywords: 'desktop alerts sound discord telegram email', icon: Bell },
   { id: 'servers', label: 'Servers & Agents', keywords: 'ssh agent polling remote', icon: Server },
@@ -86,6 +89,8 @@ export const Settings: React.FC<SettingsProps> = ({
   onProfileUpdated,
   onReplayOnboarding,
   onResetDefaults,
+  sidebarLayout,
+  onUpdateSidebarLayout,
   themeStudio,
 }) => {
   const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
@@ -269,6 +274,171 @@ export const Settings: React.FC<SettingsProps> = ({
 
           {activeTab === 'appearance' && themeStudio && (
             <ThemeStudio {...themeStudio} />
+          )}
+
+          {activeTab === 'navigation' && sidebarLayout && onUpdateSidebarLayout && (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-sm font-semibold text-zinc-100">Sidebar &amp; Workspace Customization</h2>
+                  <p className="font-mono text-[11px] text-zinc-500">
+                    Show/hide tabs, pin favorites, reorder groups, or create custom sections. Hidden features remain intact.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateSidebarLayout(resetSidebarLayout());
+                    setStatusMsg('Default sidebar layout restored.');
+                  }}
+                  className="rounded border border-white/[0.12] px-3 py-1.5 font-mono text-xs text-zinc-200 hover:bg-white/[0.06]"
+                >
+                  Restore Default Sidebar
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block font-mono text-[11px] text-zinc-400">Default Landing Page</label>
+                  <select
+                    value={sidebarLayout.defaultLandingPage}
+                    onChange={(e) =>
+                      onUpdateSidebarLayout({ ...sidebarLayout, defaultLandingPage: e.target.value as PageId })
+                    }
+                    className="w-full rounded border border-white/[0.1] bg-[#101114] px-2.5 py-1.5 text-xs text-zinc-100"
+                  >
+                    {ALL_NAV_ITEMS.map((it) => (
+                      <option key={it.id} value={it.id}>{it.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block font-mono text-[11px] text-zinc-400">Workspace Density</label>
+                  <select
+                    value={sidebarLayout.density}
+                    onChange={(e) =>
+                      onUpdateSidebarLayout({
+                        ...sidebarLayout,
+                        density: e.target.value as 'comfortable' | 'compact',
+                      })
+                    }
+                    className="w-full rounded border border-white/[0.1] bg-[#101114] px-2.5 py-1.5 text-xs text-zinc-100"
+                  >
+                    <option value="comfortable">Comfortable</option>
+                    <option value="compact">Compact</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-xs font-semibold text-zinc-300">Navigation Groups &amp; Items</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const title = window.prompt('New custom group name:');
+                      if (!title?.trim()) return;
+                      onUpdateSidebarLayout({
+                        ...sidebarLayout,
+                        groups: [
+                          ...sidebarLayout.groups,
+                          { id: `grp-${Date.now()}`, title: title.trim().toUpperCase(), itemIds: [] },
+                        ],
+                      });
+                    }}
+                    className="rounded border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 font-mono text-[11px] text-emerald-300"
+                  >
+                    + Custom Group
+                  </button>
+                </div>
+
+                {sidebarLayout.groups.map((grp, gIdx) => (
+                  <div key={grp.id} className="rounded border border-white/[0.08] bg-[#101114] p-3 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="font-mono text-xs font-semibold text-zinc-200">{grp.title}</span>
+                      <div className="flex items-center gap-1.5 font-mono text-[10px]">
+                        <button
+                          type="button"
+                          disabled={gIdx === 0}
+                          onClick={() => {
+                            const next = [...sidebarLayout.groups];
+                            [next[gIdx - 1], next[gIdx]] = [next[gIdx], next[gIdx - 1]];
+                            onUpdateSidebarLayout({ ...sidebarLayout, groups: next });
+                          }}
+                          className="rounded border border-white/[0.1] px-1.5 py-0.5 text-zinc-300 disabled:opacity-30"
+                        >
+                          ↑
+                        </button>
+                        <button
+                          type="button"
+                          disabled={gIdx === sidebarLayout.groups.length - 1}
+                          onClick={() => {
+                            const next = [...sidebarLayout.groups];
+                            [next[gIdx], next[gIdx + 1]] = [next[gIdx + 1], next[gIdx]];
+                            onUpdateSidebarLayout({ ...sidebarLayout, groups: next });
+                          }}
+                          className="rounded border border-white/[0.1] px-1.5 py-0.5 text-zinc-300 disabled:opacity-30"
+                        >
+                          ↓
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = sidebarLayout.groups.map((g) =>
+                              g.id === grp.id ? { ...g, hidden: !g.hidden } : g
+                            );
+                            onUpdateSidebarLayout({ ...sidebarLayout, groups: next });
+                          }}
+                          className={`rounded border px-2 py-0.5 ${
+                            grp.hidden ? 'border-rose-500/30 text-rose-300' : 'border-emerald-500/30 text-emerald-300'
+                          }`}
+                        >
+                          {grp.hidden ? 'Hidden' : 'Visible'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-1.5">
+                      {grp.itemIds.map((id) => {
+                        const meta = ALL_NAV_ITEMS.find((x) => x.id === id);
+                        const isHidden = sidebarLayout.hiddenItemIds.includes(id);
+                        const isPinned = sidebarLayout.pinnedItemIds.includes(id);
+                        return (
+                          <div key={id} className="flex items-center gap-1 rounded border border-white/[0.08] bg-[#09090b] px-2 py-1 font-mono text-[11px]">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextHidden = isHidden
+                                  ? sidebarLayout.hiddenItemIds.filter((x) => x !== id)
+                                  : [...sidebarLayout.hiddenItemIds, id];
+                                onUpdateSidebarLayout({ ...sidebarLayout, hiddenItemIds: nextHidden });
+                              }}
+                              className={isHidden ? 'text-zinc-500 line-through' : 'text-zinc-200'}
+                              title="Click to show/hide"
+                            >
+                              {meta?.label ?? id}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextPinned = isPinned
+                                  ? sidebarLayout.pinnedItemIds.filter((x) => x !== id)
+                                  : [...sidebarLayout.pinnedItemIds, id];
+                                onUpdateSidebarLayout({ ...sidebarLayout, pinnedItemIds: nextPinned });
+                              }}
+                              className={`text-[10px] ${isPinned ? 'text-emerald-400' : 'text-zinc-600 hover:text-zinc-300'}`}
+                              title="Pin/Unpin"
+                            >
+                              ★
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
           )}
 
           {activeTab === 'monitoring' && (
@@ -572,7 +742,7 @@ export const Settings: React.FC<SettingsProps> = ({
                 <div>
                   <div className="text-[10px] text-zinc-500">Version</div>
                   <div className="mt-0.5 text-zinc-200">
-                    {appInfo?.version ?? '4.2.2'}
+                    {appInfo?.version ?? '5.0.0'}
                   </div>
                 </div>
                 <div>
@@ -603,7 +773,7 @@ export const Settings: React.FC<SettingsProps> = ({
                     Welcome Introduction
                   </div>
                   <p className="mt-0.5 font-mono text-[11px] text-zinc-500">
-                    Replay the Surf Monitor v4.2.2 feature walkthrough without modifying your data.
+                    Replay the Surf Monitor v5.0.0 feature walkthrough without modifying your data.
                   </p>
                 </div>
                 <button

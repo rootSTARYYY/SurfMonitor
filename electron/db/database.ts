@@ -983,6 +983,158 @@ export class SurfDatabase {
         updatedAt TEXT NOT NULL
       );
 
+      CREATE TABLE IF NOT EXISTS installed_applications (
+        id TEXT PRIMARY KEY,
+        serverId TEXT NOT NULL,
+        installerId TEXT NOT NULL,
+        name TEXT NOT NULL,
+        version TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'surf_installer',
+        installDir TEXT NOT NULL DEFAULT '',
+        serviceName TEXT,
+        containerName TEXT,
+        port INTEGER,
+        url TEXT,
+        status TEXT NOT NULL DEFAULT 'running',
+        configJson TEXT NOT NULL DEFAULT '{}',
+        lastHealthCheckAt TEXT,
+        lastHealthStatus TEXT,
+        updateAvailable TEXT,
+        createdAt TEXT NOT NULL,
+        updatedAt TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS installation_jobs (
+        id TEXT PRIMARY KEY,
+        serverId TEXT NOT NULL,
+        installerId TEXT NOT NULL,
+        installerName TEXT NOT NULL,
+        version TEXT NOT NULL,
+        source TEXT NOT NULL DEFAULT 'official',
+        mode TEXT NOT NULL DEFAULT 'one_click',
+        status TEXT NOT NULL,
+        approvalPolicy TEXT NOT NULL DEFAULT 'per_installer',
+        approvedByUser INTEGER NOT NULL DEFAULT 0,
+        configJson TEXT NOT NULL DEFAULT '{}',
+        planJson TEXT NOT NULL DEFAULT '{}',
+        preflightJson TEXT NOT NULL DEFAULT '{}',
+        logs TEXT NOT NULL DEFAULT '',
+        errorMessage TEXT,
+        failedStep TEXT,
+        recoveryInstructions TEXT,
+        startedAt TEXT,
+        completedAt TEXT,
+        createdAt TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS community_installers (
+        id TEXT PRIMARY KEY,
+        packageId TEXT NOT NULL UNIQUE,
+        name TEXT NOT NULL,
+        publisher TEXT NOT NULL,
+        version TEXT NOT NULL,
+        sha256 TEXT NOT NULL,
+        manifestJson TEXT NOT NULL,
+        trustStatus TEXT NOT NULL DEFAULT 'untrusted',
+        installedAt TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS installer_policies (
+        installerId TEXT PRIMARY KEY,
+        policy TEXT NOT NULL DEFAULT 'always_review',
+        updatedAt TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS server_backups (
+        id TEXT PRIMARY KEY,
+        serverId TEXT NOT NULL,
+        appId TEXT,
+        backupType TEXT NOT NULL,
+        targetPath TEXT NOT NULL,
+        archivePath TEXT NOT NULL,
+        sizeBytes INTEGER NOT NULL DEFAULT 0,
+        verified INTEGER NOT NULL DEFAULT 0,
+        verificationNote TEXT,
+        retentionDays INTEGER NOT NULL DEFAULT 30,
+        expiresAt TEXT,
+        createdAt TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS backup_schedules (
+        id TEXT PRIMARY KEY,
+        serverId TEXT NOT NULL,
+        appId TEXT,
+        backupType TEXT NOT NULL,
+        targetPath TEXT NOT NULL,
+        intervalHours INTEGER NOT NULL DEFAULT 24,
+        retentionDays INTEGER NOT NULL DEFAULT 30,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        lastRunAt TEXT,
+        createdAt TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS automation_rules (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        serverId TEXT NOT NULL,
+        triggerType TEXT NOT NULL,
+        conditionJson TEXT NOT NULL DEFAULT '{}',
+        actionType TEXT NOT NULL,
+        actionConfigJson TEXT NOT NULL DEFAULT '{}',
+        cooldownSeconds INTEGER NOT NULL DEFAULT 300,
+        maxRetries INTEGER NOT NULL DEFAULT 3,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        lastRunAt TEXT,
+        lastStatus TEXT,
+        lastError TEXT,
+        createdAt TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS automation_executions (
+        id TEXT PRIMARY KEY,
+        ruleId TEXT NOT NULL,
+        serverId TEXT NOT NULL,
+        status TEXT NOT NULL,
+        output TEXT NOT NULL DEFAULT '',
+        errorMessage TEXT,
+        executedAt TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS saved_commands (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        commandTemplate TEXT NOT NULL,
+        variablesJson TEXT NOT NULL DEFAULT '[]',
+        isDestructive INTEGER NOT NULL DEFAULT 0,
+        createdAt TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS command_executions (
+        id TEXT PRIMARY KEY,
+        commandId TEXT,
+        commandText TEXT NOT NULL,
+        serverId TEXT NOT NULL,
+        status TEXT NOT NULL,
+        exitCode INTEGER,
+        output TEXT NOT NULL DEFAULT '',
+        executedAt TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS server_groups (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        color TEXT NOT NULL DEFAULT '#10b981',
+        createdAt TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS server_group_members (
+        groupId TEXT NOT NULL,
+        serverId TEXT NOT NULL,
+        PRIMARY KEY (groupId, serverId)
+      );
 
     `);
 
@@ -2039,6 +2191,10 @@ export class SurfDatabase {
       .get(id) as RemoteServerRecord | undefined;
   }
 
+  public getRemoteServer(id: string): RemoteServerRecord | undefined {
+    return this.getRemoteServerById(id);
+  }
+
   public createRemoteServer(input: {
     name: string;
     host: string;
@@ -2834,6 +2990,268 @@ export class SurfDatabase {
 
   public setActiveThemeId(id: string): void {
     this.setAppSetting('active_theme_id', id);
+  }
+
+  // --- v5.0.0 Platform Persistence ---
+  public listInstalledApps(serverId?: string): Array<Record<string, unknown>> {
+    if (serverId) {
+      return this.db.prepare('SELECT * FROM installed_applications WHERE serverId = ? ORDER BY updatedAt DESC').all(serverId) as Array<Record<string, unknown>>;
+    }
+    return this.db.prepare('SELECT * FROM installed_applications ORDER BY updatedAt DESC').all() as Array<Record<string, unknown>>;
+  }
+
+  public upsertInstalledApp(app: {
+    id: string; serverId: string; installerId: string; name: string; version: string;
+    source?: string; installDir?: string; serviceName?: string | null; containerName?: string | null;
+    port?: number | null; url?: string | null; status?: string; configJson?: string;
+    lastHealthCheckAt?: string | null; lastHealthStatus?: string | null; updateAvailable?: string | null;
+  }): Record<string, unknown> {
+    const now = new Date().toISOString();
+    const existing = this.db.prepare('SELECT createdAt FROM installed_applications WHERE id = ?').get(app.id) as { createdAt: string } | undefined;
+    this.db.prepare(`
+      INSERT INTO installed_applications (id, serverId, installerId, name, version, source, installDir, serviceName, containerName, port, url, status, configJson, lastHealthCheckAt, lastHealthStatus, updateAvailable, createdAt, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        version = excluded.version, installDir = excluded.installDir, serviceName = excluded.serviceName,
+        containerName = excluded.containerName, port = excluded.port, url = excluded.url, status = excluded.status,
+        configJson = excluded.configJson, lastHealthCheckAt = excluded.lastHealthCheckAt,
+        lastHealthStatus = excluded.lastHealthStatus, updateAvailable = excluded.updateAvailable, updatedAt = excluded.updatedAt
+    `).run(
+      app.id, app.serverId, app.installerId, app.name, app.version,
+      app.source ?? 'surf_installer', app.installDir ?? '', app.serviceName ?? null,
+      app.containerName ?? null, app.port ?? null, app.url ?? null,
+      app.status ?? 'running', app.configJson ?? '{}', app.lastHealthCheckAt ?? now,
+      app.lastHealthStatus ?? 'healthy', app.updateAvailable ?? null, existing?.createdAt ?? now, now
+    );
+    return this.db.prepare('SELECT * FROM installed_applications WHERE id = ?').get(app.id) as Record<string, unknown>;
+  }
+
+  public deleteInstalledApp(id: string): boolean {
+    return this.db.prepare('DELETE FROM installed_applications WHERE id = ?').run(id).changes > 0;
+  }
+
+  public listInstallationJobs(limit = 100): Array<Record<string, unknown>> {
+    return this.db.prepare('SELECT * FROM installation_jobs ORDER BY createdAt DESC LIMIT ?').all(limit) as Array<Record<string, unknown>>;
+  }
+
+  public getInstallationJob(id: string): Record<string, unknown> | undefined {
+    return this.db.prepare('SELECT * FROM installation_jobs WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+  }
+
+  public createInstallationJob(job: Record<string, unknown>): Record<string, unknown> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO installation_jobs (id, serverId, installerId, installerName, version, source, mode, status, approvalPolicy, approvedByUser, configJson, planJson, preflightJson, logs, errorMessage, failedStep, recoveryInstructions, startedAt, completedAt, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      job.id, job.serverId, job.installerId, job.installerName, job.version,
+      job.source ?? 'official', job.mode ?? 'one_click', job.status ?? 'draft',
+      job.approvalPolicy ?? 'always_review', job.approvedByUser ? 1 : 0,
+      job.configJson ?? '{}', job.planJson ?? '{}', job.preflightJson ?? '{}',
+      job.logs ?? '', job.errorMessage ?? null, job.failedStep ?? null,
+      job.recoveryInstructions ?? null, job.startedAt ?? null, job.completedAt ?? null, now
+    );
+    return this.getInstallationJob(String(job.id))!;
+  }
+
+  public updateInstallationJob(id: string, patch: Record<string, unknown>): void {
+    const fields: string[] = [];
+    const vals: unknown[] = [];
+    for (const k of ['status', 'approvedByUser', 'planJson', 'preflightJson', 'logs', 'errorMessage', 'failedStep', 'recoveryInstructions', 'startedAt', 'completedAt']) {
+      if (k in patch) {
+        fields.push(`${k} = ?`);
+        vals.push(k === 'approvedByUser' ? (patch[k] ? 1 : 0) : patch[k]);
+      }
+    }
+    if (fields.length === 0) return;
+    vals.push(id);
+    this.db.prepare(`UPDATE installation_jobs SET ${fields.join(', ')} WHERE id = ?`).run(...vals);
+  }
+
+  public listCommunityInstallers(): Array<Record<string, unknown>> {
+    return this.db.prepare('SELECT * FROM community_installers ORDER BY installedAt DESC').all() as Array<Record<string, unknown>>;
+  }
+
+  public saveCommunityInstaller(rec: { id: string; packageId: string; name: string; publisher: string; version: string; sha256: string; manifestJson: string; trustStatus?: string }): Record<string, unknown> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO community_installers (id, packageId, name, publisher, version, sha256, manifestJson, trustStatus, installedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(packageId) DO UPDATE SET
+        name = excluded.name, publisher = excluded.publisher, version = excluded.version,
+        sha256 = excluded.sha256, manifestJson = excluded.manifestJson, installedAt = excluded.installedAt
+    `).run(rec.id, rec.packageId, rec.name, rec.publisher, rec.version, rec.sha256, rec.manifestJson, rec.trustStatus ?? 'untrusted', now);
+    return this.db.prepare('SELECT * FROM community_installers WHERE packageId = ?').get(rec.packageId) as Record<string, unknown>;
+  }
+
+  public setCommunityInstallerTrust(packageId: string, trustStatus: string): boolean {
+    return this.db.prepare('UPDATE community_installers SET trustStatus = ? WHERE packageId = ?').run(trustStatus, packageId).changes > 0;
+  }
+
+  public deleteCommunityInstaller(packageId: string): boolean {
+    return this.db.prepare('DELETE FROM community_installers WHERE packageId = ?').run(packageId).changes > 0;
+  }
+
+  public getInstallerPolicy(installerId: string): string {
+    const row = this.db.prepare('SELECT policy FROM installer_policies WHERE installerId = ?').get(installerId) as { policy: string } | undefined;
+    if (row) return row.policy;
+    return this.getAppSetting('default_installer_policy') ?? 'always_review';
+  }
+
+  public listInstallerPolicies(): Record<string, string> {
+    const rows = this.db.prepare('SELECT installerId, policy FROM installer_policies').all() as Array<{ installerId: string; policy: string }>;
+    const map: Record<string, string> = {};
+    for (const r of rows) map[r.installerId] = r.policy;
+    return map;
+  }
+
+  public setInstallerPolicy(installerId: string, policy: string): void {
+    this.db.prepare(`
+      INSERT INTO installer_policies (installerId, policy, updatedAt) VALUES (?, ?, ?)
+      ON CONFLICT(installerId) DO UPDATE SET policy = excluded.policy, updatedAt = excluded.updatedAt
+    `).run(installerId, policy, new Date().toISOString());
+  }
+
+  public listServerBackups(serverId?: string): Array<Record<string, unknown>> {
+    if (serverId) {
+      return this.db.prepare('SELECT * FROM server_backups WHERE serverId = ? ORDER BY createdAt DESC').all(serverId) as Array<Record<string, unknown>>;
+    }
+    return this.db.prepare('SELECT * FROM server_backups ORDER BY createdAt DESC').all() as Array<Record<string, unknown>>;
+  }
+
+  public createServerBackup(b: Record<string, unknown>): Record<string, unknown> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO server_backups (id, serverId, appId, backupType, targetPath, archivePath, sizeBytes, verified, verificationNote, retentionDays, expiresAt, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(b.id, b.serverId, b.appId ?? null, b.backupType, b.targetPath, b.archivePath, b.sizeBytes ?? 0, b.verified ? 1 : 0, b.verificationNote ?? null, b.retentionDays ?? 30, b.expiresAt ?? null, now);
+    return this.db.prepare('SELECT * FROM server_backups WHERE id = ?').get(b.id) as Record<string, unknown>;
+  }
+
+  public verifyServerBackup(id: string, verified: boolean, note: string): void {
+    this.db.prepare('UPDATE server_backups SET verified = ?, verificationNote = ? WHERE id = ?').run(verified ? 1 : 0, note, id);
+  }
+
+  public deleteServerBackup(id: string): boolean {
+    return this.db.prepare('DELETE FROM server_backups WHERE id = ?').run(id).changes > 0;
+  }
+
+  public listBackupSchedules(): Array<Record<string, unknown>> {
+    return this.db.prepare('SELECT * FROM backup_schedules ORDER BY createdAt DESC').all() as Array<Record<string, unknown>>;
+  }
+
+  public saveBackupSchedule(s: Record<string, unknown>): Record<string, unknown> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO backup_schedules (id, serverId, appId, backupType, targetPath, intervalHours, retentionDays, enabled, lastRunAt, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        backupType = excluded.backupType, targetPath = excluded.targetPath,
+        intervalHours = excluded.intervalHours, retentionDays = excluded.retentionDays, enabled = excluded.enabled
+    `).run(s.id, s.serverId, s.appId ?? null, s.backupType, s.targetPath, s.intervalHours ?? 24, s.retentionDays ?? 30, s.enabled ? 1 : 0, s.lastRunAt ?? null, now);
+    return this.db.prepare('SELECT * FROM backup_schedules WHERE id = ?').get(s.id) as Record<string, unknown>;
+  }
+
+  public deleteBackupSchedule(id: string): boolean {
+    return this.db.prepare('DELETE FROM backup_schedules WHERE id = ?').run(id).changes > 0;
+  }
+
+  public listAutomationRules(): Array<Record<string, unknown>> {
+    return this.db.prepare('SELECT * FROM automation_rules ORDER BY createdAt DESC').all() as Array<Record<string, unknown>>;
+  }
+
+  public saveAutomationRule(r: Record<string, unknown>): Record<string, unknown> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO automation_rules (id, name, description, serverId, triggerType, conditionJson, actionType, actionConfigJson, cooldownSeconds, maxRetries, enabled, lastRunAt, lastStatus, lastError, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET
+        name = excluded.name, description = excluded.description, serverId = excluded.serverId,
+        triggerType = excluded.triggerType, conditionJson = excluded.conditionJson,
+        actionType = excluded.actionType, actionConfigJson = excluded.actionConfigJson,
+        cooldownSeconds = excluded.cooldownSeconds, maxRetries = excluded.maxRetries, enabled = excluded.enabled
+    `).run(
+      r.id, r.name, r.description ?? '', r.serverId, r.triggerType, r.conditionJson ?? '{}',
+      r.actionType, r.actionConfigJson ?? '{}', r.cooldownSeconds ?? 300, r.maxRetries ?? 3,
+      r.enabled !== false ? 1 : 0, r.lastRunAt ?? null, r.lastStatus ?? null, r.lastError ?? null, now
+    );
+    return this.db.prepare('SELECT * FROM automation_rules WHERE id = ?').get(r.id) as Record<string, unknown>;
+  }
+
+  public deleteAutomationRule(id: string): boolean {
+    return this.db.prepare('DELETE FROM automation_rules WHERE id = ?').run(id).changes > 0;
+  }
+
+  public listAutomationExecutions(ruleId?: string, limit = 50): Array<Record<string, unknown>> {
+    if (ruleId) {
+      return this.db.prepare('SELECT * FROM automation_executions WHERE ruleId = ? ORDER BY executedAt DESC LIMIT ?').all(ruleId, limit) as Array<Record<string, unknown>>;
+    }
+    return this.db.prepare('SELECT * FROM automation_executions ORDER BY executedAt DESC LIMIT ?').all(limit) as Array<Record<string, unknown>>;
+  }
+
+  public recordAutomationExecution(e: { id: string; ruleId: string; serverId: string; status: string; output?: string; errorMessage?: string | null }): void {
+    const now = new Date().toISOString();
+    this.db.prepare('INSERT INTO automation_executions (id, ruleId, serverId, status, output, errorMessage, executedAt) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+      e.id, e.ruleId, e.serverId, e.status, e.output ?? '', e.errorMessage ?? null, now
+    );
+    this.db.prepare('UPDATE automation_rules SET lastRunAt = ?, lastStatus = ?, lastError = ? WHERE id = ?').run(
+      now, e.status, e.errorMessage ?? null, e.ruleId
+    );
+  }
+
+  public listSavedCommands(): Array<Record<string, unknown>> {
+    return this.db.prepare('SELECT * FROM saved_commands ORDER BY createdAt DESC').all() as Array<Record<string, unknown>>;
+  }
+
+  public saveCommand(c: { id: string; name: string; description?: string; commandTemplate: string; variablesJson?: string; isDestructive?: boolean }): Record<string, unknown> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO saved_commands (id, name, description, commandTemplate, variablesJson, isDestructive, createdAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description, commandTemplate = excluded.commandTemplate, variablesJson = excluded.variablesJson, isDestructive = excluded.isDestructive
+    `).run(c.id, c.name, c.description ?? '', c.commandTemplate, c.variablesJson ?? '[]', c.isDestructive ? 1 : 0, now);
+    return this.db.prepare('SELECT * FROM saved_commands WHERE id = ?').get(c.id) as Record<string, unknown>;
+  }
+
+  public deleteSavedCommand(id: string): boolean {
+    return this.db.prepare('DELETE FROM saved_commands WHERE id = ?').run(id).changes > 0;
+  }
+
+  public listCommandExecutions(limit = 50): Array<Record<string, unknown>> {
+    return this.db.prepare('SELECT * FROM command_executions ORDER BY executedAt DESC LIMIT ?').all(limit) as Array<Record<string, unknown>>;
+  }
+
+  public recordCommandExecution(e: { id: string; commandId?: string | null; commandText: string; serverId: string; status: string; exitCode?: number | null; output: string }): void {
+    this.db.prepare('INSERT INTO command_executions (id, commandId, commandText, serverId, status, exitCode, output, executedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(
+      e.id, e.commandId ?? null, e.commandText, e.serverId, e.status, e.exitCode ?? null, e.output, new Date().toISOString()
+    );
+  }
+
+  public listServerGroups(): Array<Record<string, unknown>> {
+    const groups = this.db.prepare('SELECT * FROM server_groups ORDER BY name ASC').all() as Array<Record<string, unknown>>;
+    return groups.map((g) => {
+      const members = this.db.prepare('SELECT serverId FROM server_group_members WHERE groupId = ?').all(g.id) as Array<{ serverId: string }>;
+      return { ...g, serverIds: members.map((m) => m.serverId) };
+    });
+  }
+
+  public saveServerGroup(g: { id: string; name: string; description?: string; color?: string; serverIds?: string[] }): Record<string, unknown> {
+    const now = new Date().toISOString();
+    this.db.prepare(`
+      INSERT INTO server_groups (id, name, description, color, createdAt) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET name = excluded.name, description = excluded.description, color = excluded.color
+    `).run(g.id, g.name, g.description ?? '', g.color ?? '#10b981', now);
+    if (Array.isArray(g.serverIds)) {
+      this.db.prepare('DELETE FROM server_group_members WHERE groupId = ?').run(g.id);
+      const ins = this.db.prepare('INSERT OR IGNORE INTO server_group_members (groupId, serverId) VALUES (?, ?)');
+      for (const sid of g.serverIds) ins.run(g.id, sid);
+    }
+    return this.listServerGroups().find((x) => x.id === g.id)!;
+  }
+
+  public deleteServerGroup(id: string): boolean {
+    this.db.prepare('DELETE FROM server_group_members WHERE groupId = ?').run(id);
+    return this.db.prepare('DELETE FROM server_groups WHERE id = ?').run(id).changes > 0;
   }
 
   public close(): void {

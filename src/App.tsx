@@ -34,6 +34,7 @@ import { MonitorDetail } from '@/pages/MonitorDetail';
 import { Analytics } from '@/pages/Analytics';
 import { Settings, SettingsTab } from '@/pages/Settings';
 import { applyThemeToDocument, BUILT_IN_THEMES, SurfTheme, validateAndMigrateTheme } from '@/theme/themeEngine';
+import { loadSidebarLayout, SIDEBAR_STORAGE_KEY, SidebarLayoutConfig } from '@/utils/sidebarConfig';
 import {
   DependencyMapPage,
   GroupsPage,
@@ -54,6 +55,10 @@ import {
   NotificationsPage,
 } from '@/pages/ManagementPages';
 import { Pm2ProcessDetailPage, Pm2ProcessesPage } from '@/pages/Pm2Processes';
+import { InstallationCenter } from '@/pages/InstallationCenter';
+import { ApplicationManagerPage, DeploymentTemplatesPage } from '@/pages/DeploymentPlatform';
+import { AutomationCenterPage, BackupCenterPage } from '@/pages/MaintenancePlatform';
+import { CommandCenterPage, ServerGroupsPage, SftpPage, TerminalPage } from '@/pages/OperationsCenter';
 
 const SETTINGS_STORAGE_KEY = 'surf_monitor_settings_v3';
 
@@ -77,7 +82,8 @@ function loadSettings(): AppSettings {
 }
 
 export const App: React.FC = () => {
-  const [activePage, setActivePage] = useState<PageId>('overview');
+  const [sidebarLayout, setSidebarLayout] = useState<SidebarLayoutConfig>(loadSidebarLayout);
+  const [activePage, setActivePage] = useState<PageId>(() => loadSidebarLayout().defaultLandingPage);
   const [selectedMonitorId, setSelectedMonitorId] = useState<string | null>(
     null
   );
@@ -142,6 +148,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     try {
       localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+      localStorage.setItem(SIDEBAR_STORAGE_KEY, JSON.stringify(sidebarLayout));
       void window.surfMonitorAPI?.savePersistedSettings(settings as unknown as Record<string, unknown>);
     } catch {
       // ignore
@@ -572,6 +579,13 @@ export const App: React.FC = () => {
         pm2Count={pm2Count}
         degradedItems={degradedItems}
         collapsed={sidebarCollapsed}
+        layoutConfig={sidebarLayout}
+        onToggleGroupCollapse={(groupId) =>
+          setSidebarLayout((prev) => ({
+            ...prev,
+            groups: prev.groups.map((g) => (g.id === groupId ? { ...g, collapsed: !g.collapsed } : g)),
+          }))
+        }
         onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
         onNavigate={handleNavigate}
         onSelectDegradedItem={(item) => {
@@ -613,7 +627,7 @@ export const App: React.FC = () => {
             activeServers: remoteServers.filter((s) => s.connectionStatus === 'connected').length,
             totalServers: remoteServers.length,
             totalPm2Processes: pm2Count,
-            appVersion: '4.2.1',
+            appVersion: '5.0.0',
           }}
           onOpenProfileSettings={() => {
             setSettingsInitialTab('profile');
@@ -835,6 +849,42 @@ export const App: React.FC = () => {
               />
             )}
 
+            {activePage === 'installer' && (
+              <InstallationCenter servers={remoteServers} onNotify={pushToast} />
+            )}
+
+            {activePage === 'apps' && (
+              <ApplicationManagerPage servers={remoteServers} onNotify={pushToast} />
+            )}
+
+            {activePage === 'templates' && (
+              <DeploymentTemplatesPage servers={remoteServers} onNotify={pushToast} />
+            )}
+
+            {activePage === 'backups' && (
+              <BackupCenterPage servers={remoteServers} onNotify={pushToast} />
+            )}
+
+            {activePage === 'automation' && (
+              <AutomationCenterPage servers={remoteServers} onNotify={pushToast} />
+            )}
+
+            {activePage === 'terminal' && (
+              <TerminalPage servers={remoteServers} onNotify={pushToast} />
+            )}
+
+            {activePage === 'sftp' && (
+              <SftpPage servers={remoteServers} onNotify={pushToast} />
+            )}
+
+            {activePage === 'commands' && (
+              <CommandCenterPage servers={remoteServers} onNotify={pushToast} />
+            )}
+
+            {activePage === 'server-groups' && (
+              <ServerGroupsPage servers={remoteServers} onNotify={pushToast} />
+            )}
+
             {activePage === 'settings' && (
               <Settings
                 settings={settings}
@@ -847,6 +897,8 @@ export const App: React.FC = () => {
                   setReplayingOnboarding(true);
                 }}
                 onResetDefaults={() => setSettings(DEFAULT_SETTINGS)}
+                sidebarLayout={sidebarLayout}
+                onUpdateSidebarLayout={setSidebarLayout}
                 themeStudio={{
                   activeTheme,
                   draftTheme: draftTheme ?? activeTheme,
