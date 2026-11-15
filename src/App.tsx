@@ -56,6 +56,8 @@ import {
 } from '@/pages/ManagementPages';
 import { Pm2ProcessDetailPage, Pm2ProcessesPage } from '@/pages/Pm2Processes';
 import { InstallationCenter } from '@/pages/InstallationCenter';
+import { FleetHubPage } from '@/pages/FleetHub';
+import { DashboardSkeleton, Skeleton, SkeletonNavigation } from '@/components/Skeleton';
 import { ApplicationManagerPage, DeploymentTemplatesPage } from '@/pages/DeploymentPlatform';
 import { AutomationCenterPage, BackupCenterPage } from '@/pages/MaintenancePlatform';
 import { CommandCenterPage, ServerGroupsPage, SftpPage, TerminalPage } from '@/pages/OperationsCenter';
@@ -511,8 +513,24 @@ export const App: React.FC = () => {
 
   if (!profileLoaded) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-[#09090b] font-mono text-xs text-zinc-500">
-        Loading Surf Monitor...
+      <div className="surf-app-shell flex h-screen w-screen overflow-hidden text-zinc-100">
+        <SkeletonNavigation collapsed={sidebarCollapsed} />
+        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+          <header className="flex h-12 items-center justify-between border-b border-white/[0.08] bg-[#09090b] px-5">
+            <Skeleton className="h-4 w-44" />
+            <div className="flex items-center gap-2">
+              <Skeleton className="h-7 w-24" />
+              <Skeleton className="h-7 w-28" />
+              <Skeleton className="h-7 w-7" />
+              <Skeleton className="h-7 w-28" />
+            </div>
+          </header>
+          <main className="flex-1 overflow-y-auto p-5 lg:p-6">
+            <div className="mx-auto w-full max-w-[1600px]">
+              <DashboardSkeleton />
+            </div>
+          </main>
+        </div>
       </div>
     );
   }
@@ -627,7 +645,7 @@ export const App: React.FC = () => {
             activeServers: remoteServers.filter((s) => s.connectionStatus === 'connected').length,
             totalServers: remoteServers.length,
             totalPm2Processes: pm2Count,
-            appVersion: '5.0.0',
+            appVersion: '6.0.0',
           }}
           onOpenProfileSettings={() => {
             setSettingsInitialTab('profile');
@@ -849,8 +867,12 @@ export const App: React.FC = () => {
               />
             )}
 
+            {activePage === 'agent' && (
+              <FleetHubPage servers={remoteServers} onNotify={pushToast} />
+            )}
+
             {activePage === 'installer' && (
-              <InstallationCenter servers={remoteServers} onNotify={pushToast} />
+<InstallationCenter servers={remoteServers} onNotify={pushToast} />
             )}
 
             {activePage === 'apps' && (

@@ -133,8 +133,37 @@ export function extractMarkedSection(
   return stdout.slice(afterStart, e).trim();
 }
 
+export interface ManagedSshConnectionInfo {
+  connectionId: string;
+  serverId: string;
+  host: string;
+  username: string;
+  state: 'connecting' | 'connected' | 'disconnecting' | 'disconnected' | 'error';
+  terminalCount: number;
+  sftpActive: boolean;
+  createdAt: number;
+  lastActivityAt: number;
+}
+
+interface ManagedSshEntry {
+  connectionId: string;
+  serverId: string;
+  host: string;
+  username: string;
+  state: 'connecting' | 'connected' | 'disconnecting' | 'disconnected' | 'error';
+  client: Client;
+  terminalChannels: Set<string>;
+  sftpActive: boolean;
+  createdAt: number;
+  lastActivityAt: number;
+  cleanupStarted: boolean;
+}
+
 export class SshManager {
   private pool = new Map<string, Client>();
+  private connections = new Map<string, ManagedSshEntry>();
+  private connectingPromises = new Map<string, Promise<Client>>();
+  private shellToServer = new Map<string, string>();
 
   private connectClient(opts: {
     host: string;
@@ -209,8 +238,10 @@ export class SshManager {
     agentPort: number,
     agentToken: string,
     method: 'GET' | 'POST',
-    reqPath: string
+    reqPath: string,
+    reqBody?: unknown
   ): Promise<T> {
+    const payloadStr = reqBody !== undefined ? JSON.stringify(reqBody) : null;
     return new Promise<T>((resolve, reject) => {
       client.forwardOut(
         '127.0.0.1',
@@ -238,6 +269,12 @@ export class SshManager {
               headers: {
                 Authorization: `Bearer ${agentToken}`,
                 Accept: 'application/json',
+                ...(payloadStr !== null
+                  ? {
+                      'Content-Type': 'application/json',
+                      'Content-Length': String(Buffer.byteLength(payloadStr)),
+                    }
+                  : {}),
               },
             },
             (res) => {
@@ -265,6 +302,7 @@ export class SshManager {
           req.on('timeout', () => {
             req.destroy(new Error('Agent request timeout'));
           });
+          if (payloadStr !== null) req.write(payloadStr);
           req.end();
         }
       );
@@ -457,51 +495,114 @@ export class SshManager {
     server: RemoteServerRecord
   ): Promise<Client> {
     const existing = this.pool.get(server.id);
-    if (existing) return existing;
+    const existingEntry = this.connections.get(server.id);
+    if (existing && existingEntry && !existingEntry.cleanupStarted && existingEntry.state === 'connected') {
+      existingEntry.lastActivityAt = Date.now();
+      return existing;
+    }
 
-    const privateKey = decryptSecret(server.encryptedPrivateKey);
-    const passphrase = server.encryptedPassphrase
-      ? decryptSecret(server.encryptedPassphrase)
-      : undefined;
+    const inflight = this.connectingPromises.get(server.id);
+    if (inflight) return inflight;
 
-    const { client } = await this.connectClient({
-      host: server.host,
-      port: server.port,
-      username: server.username,
-      privateKey,
-      passphrase,
-      expectedFingerprint: server.hostFingerprint,
+    const promise = (async () => {
+      const privateKey = decryptSecret(server.encryptedPrivateKey);
+      const passphrase = server.encryptedPassphrase
+        ? decryptSecret(server.encryptedPassphrase)
+        : undefined;
+
+      const { client } = await this.connectClient({
+        host: server.host,
+        port: server.port,
+        username: server.username,
+        privateKey,
+        passphrase,
+        expectedFingerprint: server.hostFingerprint,
+      });
+
+      const connectionId = `ssh-${server.id}-${Date.now().toString(36)}`;
+      const entry: ManagedSshEntry = {
+        connectionId,
+        serverId: server.id,
+        host: server.host,
+        username: server.username,
+        state: 'connected',
+        client,
+        terminalChannels: new Set<string>(),
+        sftpActive: false,
+        createdAt: Date.now(),
+        lastActivityAt: Date.now(),
+        cleanupStarted: false,
+      };
+
+      console.info(`[SSH] Connection created: ${connectionId} (${server.username}@${server.host})`);
+
+      const cleanupOnDrop = () => {
+        if (this.pool.get(server.id) === client) {
+          this.disconnect(server.id);
+        }
+      };
+      client.once('close', cleanupOnDrop);
+      client.once('end', cleanupOnDrop);
+      client.once('error', cleanupOnDrop);
+
+      this.pool.set(server.id, client);
+      this.connections.set(server.id, entry);
+      return client;
+    })().finally(() => {
+      this.connectingPromises.delete(server.id);
     });
 
-    client.once('close', () => {
-      if (this.pool.get(server.id) === client) {
-        this.pool.delete(server.id);
-      }
-    });
-    client.once('error', () => {
-      if (this.pool.get(server.id) === client) {
-        this.pool.delete(server.id);
-      }
-    });
+    this.connectingPromises.set(server.id, promise);
+    return promise;
+  }
 
-    this.pool.set(server.id, client);
-    return client;
+  public listActiveConnections(): ManagedSshConnectionInfo[] {
+    return Array.from(this.connections.values()).map((c) => ({
+      connectionId: c.connectionId,
+      serverId: c.serverId,
+      host: c.host,
+      username: c.username,
+      state: c.state,
+      terminalCount: c.terminalChannels.size,
+      sftpActive: c.sftpActive,
+      createdAt: c.createdAt,
+      lastActivityAt: c.lastActivityAt,
+    }));
   }
 
   public async requestAgent<T>(
     server: RemoteServerRecord,
     method: 'GET' | 'POST',
-    reqPath: string
+    reqPath: string,
+    reqBody?: unknown
   ): Promise<T> {
-    const client = await this.getConnectedClient(server);
     const token = decryptSecret(server.encryptedAgentToken);
-    return this.tunneledHttpRequest<T>(
-      client,
-      server.agentPort,
-      token,
-      method,
-      reqPath
-    );
+    try {
+      const client = await this.getConnectedClient(server);
+      return await this.tunneledHttpRequest<T>(
+        client,
+        server.agentPort,
+        token,
+        method,
+        reqPath,
+        reqBody
+      );
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (/ECONNRESET|Channel open failure|Not connected|EPIPE|socket hang up/i.test(msg)) {
+        this.disconnect(server.id);
+        const freshClient = await this.getConnectedClient(server);
+        return this.tunneledHttpRequest<T>(
+          freshClient,
+          server.agentPort,
+          token,
+          method,
+          reqPath,
+          reqBody
+        );
+      }
+      throw err;
+    }
   }
 
   private shells = new Map<string, ClientChannel>();
@@ -656,19 +757,27 @@ export class SshManager {
           const decoder = new StringDecoder(encoding);
           this.shells.set(sessionId, stream);
           this.shellDecoders.set(sessionId, decoder);
+          this.shellToServer.set(sessionId, server.id);
+          const entry = this.connections.get(server.id);
+          if (entry) {
+            entry.terminalChannels.add(sessionId);
+            entry.lastActivityAt = Date.now();
+            console.info(`[SSH] Terminal channel opened: ${entry.connectionId} (${sessionId})`);
+          }
           stream.on('data', (d: Buffer) => {
+            if (entry) entry.lastActivityAt = Date.now();
             const text = decoder.write(d);
             if (text) onData(text);
           });
           stream.stderr?.on('data', (d: Buffer) => {
+            if (entry) entry.lastActivityAt = Date.now();
             const text = decoder.write(d);
             if (text) onData(text);
           });
-          stream.on('close', (code: number) => {
+          stream.once('close', (code: number) => {
             const rem = decoder.end();
             if (rem) onData(rem);
-            this.shells.delete(sessionId);
-            this.shellDecoders.delete(sessionId);
+            this.finalizeShellCleanup(sessionId);
             onExit(code);
           });
           resolve();
@@ -691,12 +800,33 @@ export class SshManager {
     return true;
   }
 
+  private finalizeShellCleanup(sessionId: string): void {
+    const serverId = this.shellToServer.get(sessionId);
+    this.shells.delete(sessionId);
+    this.shellDecoders.delete(sessionId);
+    this.shellToServer.delete(sessionId);
+    if (!serverId) return;
+    const entry = this.connections.get(serverId);
+    if (!entry) return;
+    entry.terminalChannels.delete(sessionId);
+    console.info(`[SSH] Terminal channel closed: ${entry.connectionId} (${sessionId})`);
+    if (entry.terminalChannels.size === 0 && !entry.sftpActive) {
+      this.disconnect(serverId);
+    }
+  }
+
   public closeShellSession(sessionId: string): void {
     const stream = this.shells.get(sessionId);
-    if (stream) {
-      try { stream.end(); } catch {}
-      this.shells.delete(sessionId);
+    const decoder = this.shellDecoders.get(sessionId);
+    if (decoder) {
+      try { decoder.end(); } catch {}
     }
+    if (stream) {
+      try { stream.removeAllListeners(); } catch {}
+      try { stream.end(); } catch {}
+      try { stream.close(); } catch {}
+    }
+    this.finalizeShellCleanup(sessionId);
   }
 
   private async getPooledSftp(server: RemoteServerRecord): Promise<SFTPWrapper> {
@@ -713,6 +843,12 @@ export class SshManager {
           if (this.sftpPool.get(server.id) === sftp) this.sftpPool.delete(server.id);
         });
         this.sftpPool.set(server.id, sftp);
+        const entry = this.connections.get(server.id);
+        if (entry) {
+          entry.sftpActive = true;
+          entry.lastActivityAt = Date.now();
+          console.info(`[SSH] SFTP session opened: ${entry.connectionId}`);
+        }
         resolve(sftp);
       });
     });
@@ -847,21 +983,80 @@ export class SshManager {
     });
   }
 
-  public disconnect(serverId: string): void {
+  public closeSftpSession(serverId: string): void {
     const sftp = this.sftpPool.get(serverId);
-    if (sftp) { try { sftp.end(); } catch {} this.sftpPool.delete(serverId); }
+    if (sftp) {
+      try { sftp.removeAllListeners(); } catch {}
+      try { sftp.end(); } catch {}
+      this.sftpPool.delete(serverId);
+    }
+    const entry = this.connections.get(serverId);
+    if (entry) {
+      entry.sftpActive = false;
+      console.info(`[SSH] SFTP session closed: ${entry.connectionId}`);
+      if (entry.terminalChannels.size === 0) {
+        this.disconnect(serverId);
+      }
+    }
+  }
+
+  public disconnect(serverId: string): void {
+    const entry = this.connections.get(serverId);
+    if (entry?.cleanupStarted) return;
+    if (entry) {
+      entry.cleanupStarted = true;
+      entry.state = 'disconnecting';
+      for (const sid of Array.from(entry.terminalChannels)) {
+        const st = this.shells.get(sid);
+        if (st) {
+          try { st.removeAllListeners(); } catch {}
+          try { st.end(); } catch {}
+          try { st.close(); } catch {}
+        }
+        this.shells.delete(sid);
+        this.shellDecoders.delete(sid);
+        this.shellToServer.delete(sid);
+      }
+      entry.terminalChannels.clear();
+      entry.sftpActive = false;
+    }
+
+    const sftp = this.sftpPool.get(serverId);
+    if (sftp) {
+      try { sftp.removeAllListeners(); } catch {}
+      try { sftp.end(); } catch {}
+      this.sftpPool.delete(serverId);
+    }
+
     const client = this.pool.get(serverId);
     if (client) {
-      client.end();
       this.pool.delete(serverId);
+      try { client.removeAllListeners(); } catch {}
+      try { client.end(); } catch {}
+      setTimeout(() => {
+        try { client.destroy(); } catch {}
+      }, 400);
+    }
+
+    if (entry) {
+      entry.state = 'disconnected';
+      this.connections.delete(serverId);
+      console.info(`[SSH] Client disconnected & resources released: ${entry.connectionId}`);
     }
   }
 
   public disconnectAll(): void {
-    for (const id of this.shells.keys()) this.closeShellSession(id);
-    for (const c of this.pool.values()) {
-      c.end();
+    for (const sid of Array.from(this.shells.keys())) {
+      this.closeShellSession(sid);
     }
-    this.pool.clear();
+    for (const serverId of Array.from(this.connections.keys())) {
+      this.disconnect(serverId);
+    }
+    for (const [serverId, c] of Array.from(this.pool.entries())) {
+      this.pool.delete(serverId);
+      try { c.removeAllListeners(); } catch {}
+      try { c.end(); } catch {}
+      try { c.destroy(); } catch {}
+    }
   }
 }

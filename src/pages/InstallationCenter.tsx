@@ -17,6 +17,7 @@ import {
   Wrench,
   XCircle,
 } from 'lucide-react';
+import { PageSkeleton } from '@/components/Skeleton';
 import {
   DeploymentPlanDTO,
   InstallationJobDTO,
@@ -43,6 +44,7 @@ const CATEGORIES = [
 ];
 
 export const InstallationCenter: React.FC<InstallationCenterProps> = ({ servers, onNotify }) => {
+  const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [catalog, setCatalog] = useState<InstallerCatalogItem[]>([]);
   const [jobs, setJobs] = useState<InstallationJobDTO[]>([]);
   const [community, setCommunity] = useState<Array<Record<string, unknown>>>([]);
@@ -73,6 +75,7 @@ export const InstallationCenter: React.FC<InstallationCenterProps> = ({ servers,
     setCatalog(cat);
     setJobs(jList);
     setCommunity(comm);
+    setLoadingCatalog(false);
   };
 
   useEffect(() => {
@@ -185,6 +188,10 @@ export const InstallationCenter: React.FC<InstallationCenterProps> = ({ servers,
   };
 
   const activeJob = jobs.find((j) => j.id === activeJobId) ?? jobs[0] ?? null;
+
+  if (loadingCatalog && catalog.length === 0) {
+    return <PageSkeleton cards={6} rows={4} />;
+  }
 
   return (
     <div className="space-y-4">
@@ -436,6 +443,7 @@ export const InstallationCenter: React.FC<InstallationCenterProps> = ({ servers,
                   <div className="rounded border border-rose-500/30 bg-rose-500/10 p-3 font-mono text-xs text-rose-200">
                     <div className="font-semibold">Failure Details:</div>
                     <div className="mt-1">{activeJob.errorMessage}</div>
+
                     {activeJob.recoveryInstructions && (
                       <div className="mt-2 text-zinc-300">
                         Recovery Note: {activeJob.recoveryInstructions}

@@ -257,3 +257,32 @@
     animation-duration: 0.001ms !important;
   }
 }
+
+/* v6.0.0 Theme-Aware Skeleton Shimmer */
+@keyframes surf-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.surf-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surf-elevated-bg, rgba(255, 255, 255, 0.04)) 25%,
+    rgba(255, 255, 255, 0.08) 50%,
+    var(--surf-elevated-bg, rgba(255, 255, 255, 0.04)) 75%
+  );
+  background-size: 200% 100%;
+  animation: surf-shimmer 1.6s ease-in-out infinite;
+  border-radius: var(--surf-radius, 6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .surf-skeleton {
+    animation: none;
+    background: var(--surf-elevated-bg, rgba(255, 255, 255, 0.05));
+  }
+}

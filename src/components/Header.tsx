@@ -311,7 +311,7 @@ export const Header: React.FC<HeaderProps> = ({
                     className="font-mono text-[10px]"
                     style={{ color: 'var(--surf-text-muted, #71717a)' }}
                   >
-                    Local Workspace · v{userStats?.appVersion ?? '5.0.0'}
+                    Local Workspace · v{userStats?.appVersion ?? '6.0.0'}
                   </div>
                 </div>
               </div>

@@ -23,6 +23,9 @@ if getent group docker >/dev/null 2>&1; then
 fi
 
 mkdir -p "$INSTALL_DIR"
+if [ -f "$INSTALL_DIR/surf-agent.mjs" ]; then
+  cp "$INSTALL_DIR/surf-agent.mjs" "$INSTALL_DIR/surf-agent.mjs.bak"
+fi
 cp "$(dirname "$0")/surf-agent.mjs" "$INSTALL_DIR/surf-agent.mjs"
 chmod 750 "$INSTALL_DIR/surf-agent.mjs"
 chown -R root:"$SERVICE_USER" "$INSTALL_DIR"

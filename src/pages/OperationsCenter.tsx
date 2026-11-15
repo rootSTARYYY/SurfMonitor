@@ -26,6 +26,7 @@ import {
   X,
 } from 'lucide-react';
 import { RemoteServerDTO, SavedCommandDTO, ServerGroupDTO, SftpEntryDTO } from '@/types';
+import { FileBrowserSkeleton, TerminalLoadingState } from '@/components/Skeleton';
 import {
   DEFAULT_TERMINAL_CONFIG,
   TerminalAppearanceConfig,
@@ -59,6 +60,7 @@ export const TerminalPage: React.FC<{
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [nowTick, setNowTick] = useState(Date.now());
+  const [connecting, setConnecting] = useState(false);
   const [termConfig, setTermConfig] = useState<TerminalAppearanceConfig>(() => {
     try {
       const raw = localStorage.getItem(TERM_CFG_KEY);
@@ -69,6 +71,16 @@ export const TerminalPage: React.FC<{
   });
 
   const writersRef = useRef<Map<string, (chunk: string) => void>>(new Map());
+  const tabsRef = useRef<TerminalSessionTab[]>([]);
+  tabsRef.current = tabs;
+
+  useEffect(() => {
+    return () => {
+      for (const t of tabsRef.current) {
+        void window.surfMonitorAPI?.closeTerminalSession(t.sessionId);
+      }
+    };
+  }, []);
   const pendingBufferRef = useRef<Map<string, string>>(new Map());
 
   useEffect(() => {
@@ -127,6 +139,7 @@ export const TerminalPage: React.FC<{
     if (!sid || !window.surfMonitorAPI) return;
     const srv = servers.find((s) => s.id === sid);
     const sessionId = `term-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`;
+    setConnecting(true);
     try {
       await window.surfMonitorAPI.openTerminalSession(sessionId, sid, 120, 34);
       const newTab: TerminalSessionTab = {
@@ -149,6 +162,8 @@ export const TerminalPage: React.FC<{
       }
     } catch (err) {
       onNotify('SSH Terminal failed', 'error', err instanceof Error ? err.message : String(err));
+    } finally {
+      setConnecting(false);
     }
   };
 
@@ -257,6 +272,18 @@ export const TerminalPage: React.FC<{
                 className="rounded border border-white/[0.08] px-2 py-1 text-zinc-300 hover:bg-white/[0.05]"
               >
                 Clear
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await window.surfMonitorAPI?.closeTerminalSession(activeTab.sessionId);
+                  setTabs((prev) => prev.filter((x) => x.sessionId !== activeTab.sessionId));
+                  setActiveTabId(null);
+                  onNotify('Disconnected', 'info', activeTab.label);
+                }}
+                className="rounded border border-rose-500/30 px-2 py-1 text-rose-300 hover:bg-rose-500/10"
+              >
+                Disconnect
               </button>
               <button
                 type="button"
@@ -407,7 +434,9 @@ export const TerminalPage: React.FC<{
       )}
 
       {/* Terminal Viewport */}
-      {activeTab ? (
+      {connecting ? (
+        <TerminalLoadingState />
+      ) : activeTab ? (
         <div
           className={`grid min-h-0 flex-1 gap-2 ${
             splitMode === 'horizontal'
@@ -511,6 +540,9 @@ export const SftpPage: React.FC<{
 
   useEffect(() => {
     if (serverId) void loadDir('/', true);
+    return () => {
+      if (serverId) void window.surfMonitorAPI?.closeSftpSession(serverId);
+    };
   }, [serverId]);
 
   const filtered = useMemo(() => {
@@ -649,6 +681,9 @@ export const SftpPage: React.FC<{
         </div>
       </div>
 
+      {loading && entries.length === 0 ? (
+        <FileBrowserSkeleton rows={8} />
+      ) : (
       <div className="overflow-hidden rounded-md border border-white/[0.08] bg-[#09090b]">
         <table className="w-full text-left font-mono text-xs">
           <thead className="border-b border-white/[0.08] bg-[#101114] text-[10px] uppercase text-zinc-500">
@@ -744,6 +779,7 @@ export const SftpPage: React.FC<{
           </tbody>
         </table>
       </div>
+      )}
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between font-mono text-xs text-zinc-400">

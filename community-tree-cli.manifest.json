@@ -1,0 +1,35 @@
+{
+  "manifestVersion": 1,
+  "packageId": "community.tree-cli",
+  "name": "Tree CLI",
+  "version": "1.0.0",
+  "description": "A lightweight Linux CLI utility that displays directory structures in a tree format.",
+  "category": "devtools",
+  "publisher": {
+    "name": "Surf Community"
+  },
+  "supportedOs": [
+    "ubuntu",
+    "debian"
+  ],
+  "supportedArch": [
+    "x86_64",
+    "aarch64"
+  ],
+  "minDiskMb": 20,
+  "minRamMb": 64,
+  "requiredPorts": [],
+  "requiredPrivileges": "root_or_sudo",
+  "permissions": [
+    "APT package index refresh and installation of the tree package"
+  ],
+  "configSchema": [],
+  "installCommands": [
+    {
+      "label": "Install Tree CLI via APT",
+      "command": "apt-get update && apt-get install -y tree"
+    }
+  ],
+  "verifyCommand": "tree --version",
+  "uninstallCommand": "apt-get remove -y tree"
+}

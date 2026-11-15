@@ -20,6 +20,7 @@ export type PageId =
   | 'remote-services'
   | 'pm2'
   | 'pm2-detail'
+  | 'agent'
   | 'server-groups'
   | 'terminal'
   | 'sftp'
@@ -1009,6 +1010,24 @@ declare global {
       exportThemeFile: (defaultFilename: string, content: string) => Promise<string | null>;
       importThemeFile: (kind: 'json' | 'css') => Promise<string | null>;
       pickThemeBgImage: () => Promise<string | null>;
+      getAgentOverview: (serverId: string) => Promise<{
+        health: Record<string, unknown> | null;
+        capabilities: Record<string, unknown> | null;
+        events: Array<Record<string, unknown>>;
+        processes: Array<Record<string, unknown>>;
+        ports: Array<Record<string, unknown>>;
+      }>;
+      getAgentPerfAnalysis: (serverId: string) => Promise<Record<string, unknown>>;
+      getAgentPerfProfiles: (serverId: string) => Promise<{ profiles: Array<Record<string, unknown>>; hasBackup: boolean }>;
+      applyAgentPerfProfile: (serverId: string, profileId: string) => Promise<Record<string, unknown>>;
+      rollbackAgentPerfProfile: (serverId: string) => Promise<Record<string, unknown>>;
+      getAgentCapacityForecast: (serverId: string) => Promise<Record<string, unknown>>;
+      getAgentNetworkAnomalies: (serverId: string) => Promise<Record<string, unknown>>;
+      blockIpMitigation: (serverId: string, ip: string, durationSec: number) => Promise<Record<string, unknown>>;
+      getAgentSecurity: (serverId: string) => Promise<Record<string, unknown>>;
+      getAgentActivity: (serverId: string) => Promise<{ activity: Array<Record<string, unknown>> }>;
+      getAgentSettings: (serverId: string) => Promise<Record<string, unknown>>;
+      saveAgentSettings: (serverId: string, settingsObj: Record<string, unknown>) => Promise<Record<string, unknown>>;
       getInstallerCatalog: () => Promise<InstallerCatalogItem[]>;
       getInstallerVersions: (installerId: string, forceRefresh?: boolean) => Promise<VersionDiscoveryResultDTO>;
       listDeploymentTemplates: () => Promise<DeploymentTemplateDTO[]>;
@@ -1035,6 +1054,19 @@ declare global {
       openTerminalSession: (sessionId: string, serverId: string, cols: number, rows: number) => Promise<boolean>;
       writeTerminalSession: (sessionId: string, data: string) => Promise<boolean>;
       resizeTerminalSession: (sessionId: string, cols: number, rows: number) => Promise<boolean>;
+      listActiveSshConnections: () => Promise<Array<{
+        connectionId: string;
+        serverId: string;
+        host: string;
+        username: string;
+        state: string;
+        terminalCount: number;
+        sftpActive: boolean;
+        createdAt: number;
+        lastActivityAt: number;
+      }>>;
+      disconnectSshServer: (serverId: string) => Promise<boolean>;
+      closeSftpSession: (serverId: string) => Promise<boolean>;
       closeTerminalSession: (sessionId: string) => Promise<boolean>;
       onTerminalData: (cb: (payload: { sessionId: string; data: string }) => void) => () => void;
       onTerminalExit: (cb: (payload: { sessionId: string; code?: number }) => void) => () => void;

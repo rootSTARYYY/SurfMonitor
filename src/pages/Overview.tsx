@@ -25,6 +25,7 @@ import {
   TimeRangeFilter,
 } from '@/types';
 import { MonitorRow } from '@/components/MonitorRow';
+import { DashboardSkeleton } from '@/components/Skeleton';
 import { formatShortTime, formatTimestamp, formatUptime } from '@/utils/format';
 
 interface OverviewProps {
@@ -135,6 +136,10 @@ export const Overview: React.FC<OverviewProps> = ({
     if (statusFilter === 'ALL') return monitors;
     return monitors.filter((m) => m.status === statusFilter);
   }, [monitors, statusFilter]);
+
+  if (loading && !data) {
+    return <DashboardSkeleton />;
+  }
 
   const connectedServers = servers.filter(
     (s) => s.connectionStatus === 'connected'

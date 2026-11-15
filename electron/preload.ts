@@ -169,6 +169,21 @@ const surfMonitorAPI = {
     ipcRenderer.invoke('themes:import-file', kind),
   pickThemeBgImage: () => ipcRenderer.invoke('themes:pick-bg-image'),
 
+  // Surf Agent v4.0.0 APIs
+  getAgentOverview: (serverId: string) => ipcRenderer.invoke('agent:overview', serverId),
+  getAgentPerfAnalysis: (serverId: string) => ipcRenderer.invoke('agent:perf-analysis', serverId),
+  getAgentPerfProfiles: (serverId: string) => ipcRenderer.invoke('agent:perf-profiles', serverId),
+  applyAgentPerfProfile: (serverId: string, profileId: string) => ipcRenderer.invoke('agent:perf-apply', serverId, profileId),
+  rollbackAgentPerfProfile: (serverId: string) => ipcRenderer.invoke('agent:perf-rollback', serverId),
+  getAgentCapacityForecast: (serverId: string) => ipcRenderer.invoke('agent:capacity-forecast', serverId),
+  getAgentNetworkAnomalies: (serverId: string) => ipcRenderer.invoke('agent:network-anomalies', serverId),
+  blockIpMitigation: (serverId: string, ip: string, durationSec: number) => ipcRenderer.invoke('agent:block-ip', serverId, ip, durationSec),
+  getAgentSecurity: (serverId: string) => ipcRenderer.invoke('agent:security', serverId),
+  getAgentActivity: (serverId: string) => ipcRenderer.invoke('agent:activity', serverId),
+  getAgentSettings: (serverId: string) => ipcRenderer.invoke('agent:get-settings', serverId),
+  saveAgentSettings: (serverId: string, settingsObj: Record<string, unknown>) =>
+    ipcRenderer.invoke('agent:save-settings', serverId, settingsObj),
+
   // v5.0.0 Platform APIs
   getInstallerCatalog: () => ipcRenderer.invoke('installer:get-catalog'),
   getInstallerVersions: (installerId: string, forceRefresh?: boolean) => ipcRenderer.invoke('installer:get-versions', installerId, forceRefresh),
@@ -204,6 +219,9 @@ const surfMonitorAPI = {
     ipcRenderer.invoke('terminal:write', sessionId, data),
   resizeTerminalSession: (sessionId: string, cols: number, rows: number) =>
     ipcRenderer.invoke('terminal:resize', sessionId, cols, rows),
+  listActiveSshConnections: () => ipcRenderer.invoke('ssh:list-connections'),
+  disconnectSshServer: (serverId: string) => ipcRenderer.invoke('ssh:disconnect', serverId),
+  closeSftpSession: (serverId: string) => ipcRenderer.invoke('sftp:close', serverId),
   closeTerminalSession: (sessionId: string) =>
     ipcRenderer.invoke('terminal:close', sessionId),
   onTerminalData: (cb: (payload: { sessionId: string; data: string }) => void): (() => void) => {

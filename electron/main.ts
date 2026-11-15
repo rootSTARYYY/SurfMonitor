@@ -59,7 +59,6 @@ const DEV_SERVER_URL =
 const HEARTBEAT_PORT = 45821;
 
 let mainWindow: BrowserWindow | null = null;
-let splashWindow: BrowserWindow | null = null;
 let startupTimings: Record<string, number> = {};
 let tray: Tray | null = null;
 let db: SurfDatabase | null = null;
@@ -1483,6 +1482,75 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle('startup:get-timings', () => startupTimings);
 
+  // --- Surf Agent v4.0.0 IPCs ---
+  ipcMain.handle('agent:overview', async (_e, serverId: string) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    const [health, capabilities, events, processes, ports] = await Promise.all([
+      sshManager.requestAgent<Record<string, unknown>>(server, 'GET', '/v1/agent/health').catch(() => null),
+      sshManager.requestAgent<Record<string, unknown>>(server, 'GET', '/v1/agent/capabilities').catch(() => null),
+      sshManager.requestAgent<{ events: Array<Record<string, unknown>> }>(server, 'GET', '/v1/events').catch(() => ({ events: [] })),
+      sshManager.requestAgent<{ processes: Array<Record<string, unknown>> }>(server, 'GET', '/v1/processes').catch(() => ({ processes: [] })),
+      sshManager.requestAgent<{ ports: Array<Record<string, unknown>> }>(server, 'GET', '/v1/network/ports').catch(() => ({ ports: [] })),
+    ]);
+    return { health, capabilities, events: events.events ?? [], processes: processes.processes ?? [], ports: ports.ports ?? [] };
+  });
+  ipcMain.handle('agent:perf-analysis', async (_e, serverId: string) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    return sshManager.requestAgent<Record<string, unknown>>(server, 'GET', '/v1/performance/analysis');
+  });
+  ipcMain.handle('agent:perf-profiles', async (_e, serverId: string) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    return sshManager.requestAgent<{ profiles: Array<Record<string, unknown>>; hasBackup: boolean }>(server, 'GET', '/v1/performance/profiles');
+  });
+  ipcMain.handle('agent:perf-apply', async (_e, serverId: string, profileId: string) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    return sshManager.requestAgent<Record<string, unknown>>(server, 'POST', '/v1/performance/profiles/apply', { profileId });
+  });
+  ipcMain.handle('agent:perf-rollback', async (_e, serverId: string) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    return sshManager.requestAgent<Record<string, unknown>>(server, 'POST', '/v1/performance/profiles/rollback', {});
+  });
+  ipcMain.handle('agent:capacity-forecast', async (_e, serverId: string) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    return sshManager.requestAgent<Record<string, unknown>>(server, 'GET', '/v1/capacity/forecast');
+  });
+  ipcMain.handle('agent:network-anomalies', async (_e, serverId: string) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    return sshManager.requestAgent<Record<string, unknown>>(server, 'GET', '/v1/network/anomalies');
+  });
+  ipcMain.handle('agent:block-ip', async (_e, serverId: string, ip: string, durationSec: number) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    return sshManager.requestAgent<Record<string, unknown>>(server, 'POST', '/v1/security/mitigations/block-ip', { ip, durationSec });
+  });
+  ipcMain.handle('agent:security', async (_e, serverId: string) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    return sshManager.requestAgent<Record<string, unknown>>(server, 'GET', '/v1/security/overview');
+  });
+  ipcMain.handle('agent:activity', async (_e, serverId: string) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    return sshManager.requestAgent<{ activity: Array<Record<string, unknown>> }>(server, 'GET', '/v1/agent/activity');
+  });
+  ipcMain.handle('agent:get-settings', async (_e, serverId: string) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    return sshManager.requestAgent<Record<string, unknown>>(server, 'GET', '/v1/agent/settings');
+  });
+  ipcMain.handle('agent:save-settings', async (_e, serverId: string, settingsObj: Record<string, unknown>) => {
+    const server = db?.getRemoteServer(serverId);
+    if (!server || !sshManager) throw new Error('Server not found');
+    return sshManager.requestAgent<Record<string, unknown>>(server, 'POST', '/v1/agent/settings', settingsObj);
+  });
+
   // --- v5.0.0 Installation Center & Platform IPCs ---
   ipcMain.handle('installer:get-catalog', () => installerEngine?.getCatalog() ?? []);
   ipcMain.handle('installer:get-versions', (_e, installerId: string, forceRefresh?: boolean) => versionDiscovery?.getVersions(installerId, Boolean(forceRefresh)));
@@ -1596,6 +1664,15 @@ function registerIpcHandlers(): void {
   });
   ipcMain.handle('terminal:write', (_e, sessionId: string, data: string) => sshManager?.writeShellSession(sessionId, data) ?? false);
   ipcMain.handle('terminal:resize', (_e, sessionId: string, cols: number, rows: number) => sshManager?.resizeShellSession(sessionId, cols, rows) ?? false);
+  ipcMain.handle('ssh:list-connections', () => sshManager?.listActiveConnections() ?? []);
+  ipcMain.handle('ssh:disconnect', (_e, serverId: string) => {
+    sshManager?.disconnect(serverId);
+    return true;
+  });
+  ipcMain.handle('sftp:close', (_e, serverId: string) => {
+    sshManager?.closeSftpSession(serverId);
+    return true;
+  });
   ipcMain.handle('terminal:close', (_e, sessionId: string) => {
     sshManager?.closeShellSession(sessionId);
     return true;
@@ -1931,59 +2008,23 @@ function registerIpcHandlers(): void {
   });
 }
 
-function createSplashWindow(): BrowserWindow {
-  const iconPath = getAppIconPath();
-  const win = new BrowserWindow({
-    ...(iconPath ? { icon: iconPath } : {}),
-    width: 480,
-    height: 330,
-    frame: false,
-    resizable: false,
-    transparent: false,
-    backgroundColor: '#09090b',
-    center: true,
-    show: true,
-    webPreferences: {
-      preload: path.join(__dirname, 'splashPreload.js'),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  });
-  void win.loadFile(path.join(__dirname, '../electron/splash.html'));
-  return win;
-}
-
-function sendSplashProgress(percent: number, stage: string): void {
-  if (splashWindow && !splashWindow.isDestroyed()) {
-    splashWindow.webContents.send('startup:progress', { percent, stage });
-  }
-}
-
 app.whenReady().then(async () => {
   const t0 = performance.now();
-  splashWindow = createSplashWindow();
-  sendSplashProgress(10, 'Starting Electron...');
 
   const dbPath = path.join(app.getPath('userData'), 'surf-monitor.db');
-  sendSplashProgress(20, 'Loading application configuration...');
   startupTimings.configMs = Math.round(performance.now() - t0);
 
-  sendSplashProgress(35, 'Initializing SQLite & running migrations...');
   const tDb = performance.now();
   db = new SurfDatabase(dbPath);
   startupTimings.databaseMs = Math.round(performance.now() - tDb);
 
-  sendSplashProgress(50, 'Initializing notification services...');
   notifier = new NotificationService(db);
   createTray();
 
-  sendSplashProgress(62, 'Loading user profile & preferences...');
   const tProf = performance.now();
   db.getUserProfile();
   startupTimings.profileLoadMs = Math.round(performance.now() - tProf);
 
-  sendSplashProgress(74, 'Starting monitoring scheduler...');
   scheduler = new MonitoringScheduler(db, emitToRenderer, notifier);
   sshManager = new SshManager();
   versionDiscovery = new VersionDiscoveryService(db);
@@ -2001,15 +2042,15 @@ app.whenReady().then(async () => {
   registerIpcHandlers();
   startHeartbeatServer();
 
-  sendSplashProgress(86, 'Loading dashboard & remote-agent manager...');
   createWindow();
 
+  mainWindow?.webContents.on('did-start-loading', () => {
+    sshManager?.disconnectAll();
+  });
+  mainWindow?.webContents.on('render-process-gone', () => {
+    sshManager?.disconnectAll();
+  });
   mainWindow?.once('ready-to-show', () => {
-    sendSplashProgress(100, 'Opening Surf Monitor...');
-    if (splashWindow && !splashWindow.isDestroyed()) {
-      splashWindow.close();
-      splashWindow = null;
-    }
     mainWindow?.show();
     startupTimings.totalStartupMs = Math.round(performance.now() - t0);
 

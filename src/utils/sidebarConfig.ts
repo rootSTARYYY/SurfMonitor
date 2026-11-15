@@ -24,6 +24,7 @@ export const ALL_NAV_ITEMS: Array<{ id: PageId; label: string }> = [
   { id: 'dependency-map', label: 'Dependency Map' },
   { id: 'incidents', label: 'Incidents' },
   { id: 'servers', label: 'Servers' },
+  { id: 'agent', label: 'Fleet & Agent' },
   { id: 'containers', label: 'Docker Containers' },
   { id: 'server-groups', label: 'Server Groups' },
   { id: 'pm2', label: 'PM2 Processes' },
@@ -56,7 +57,7 @@ export const DEFAULT_SIDEBAR_LAYOUT: SidebarLayoutConfig = {
     {
       id: 'grp-infra',
       title: 'INFRASTRUCTURE',
-      itemIds: ['servers', 'containers', 'server-groups', 'pm2'],
+      itemIds: ['servers', 'agent', 'containers', 'server-groups', 'pm2'],
     },
     {
       id: 'grp-ops',
