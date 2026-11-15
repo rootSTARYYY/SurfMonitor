@@ -34,7 +34,8 @@ import { MonitorDetail } from '@/pages/MonitorDetail';
 import { Analytics } from '@/pages/Analytics';
 import { Settings, SettingsTab } from '@/pages/Settings';
 import { applyThemeToDocument, BUILT_IN_THEMES, SurfTheme, validateAndMigrateTheme } from '@/theme/themeEngine';
-import { loadSidebarLayout, SIDEBAR_STORAGE_KEY, SidebarLayoutConfig } from '@/utils/sidebarConfig';
+import { ALL_NAV_ITEMS, findWorkspaceForPage, loadSidebarLayout, SIDEBAR_STORAGE_KEY, SidebarLayoutConfig } from '@/utils/sidebarConfig';
+import { QuickSwitcher } from '@/components/QuickSwitcher';
 import {
   DependencyMapPage,
   GroupsPage,
@@ -99,6 +100,8 @@ export const App: React.FC = () => {
   const [profileLoaded, setProfileLoaded] = useState(false);
   const [replayingOnboarding, setReplayingOnboarding] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false);
+  const [recentPages, setRecentPages] = useState<PageId[]>([]);
   const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab>('general');
   const [activeTheme, setActiveTheme] = useState<SurfTheme>(BUILT_IN_THEMES[0]);
   const [draftTheme, setDraftTheme] = useState<SurfTheme | null>(null);
@@ -403,9 +406,35 @@ export const App: React.FC = () => {
     pushToast,
   ]);
 
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setQuickSwitcherOpen((o) => !o);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, []);
+
   const handleNavigate = (page: PageId) => {
     setActivePage(page);
     if (page !== 'monitor-detail') setSelectedMonitorId(null);
+    if (page !== 'monitor-detail' && page !== 'server-detail' && page !== 'pm2-detail') {
+      setRecentPages((prev) => [page, ...prev.filter((p) => p !== page)].slice(0, 4));
+    }
+  };
+
+  const togglePinPage = (page: PageId) => {
+    setSidebarLayout((prev) => {
+      const exists = prev.pinnedItemIds.includes(page);
+      return {
+        ...prev,
+        pinnedItemIds: exists
+          ? prev.pinnedItemIds.filter((p) => p !== page)
+          : [...prev.pinnedItemIds, page],
+      };
+    });
   };
 
   const handleSelectMonitor = (monitorId: string) => {
@@ -525,7 +554,54 @@ export const App: React.FC = () => {
               <Skeleton className="h-7 w-28" />
             </div>
           </header>
-          <main className="flex-1 overflow-y-auto p-5 lg:p-6">
+          {(() => {
+          const ws = findWorkspaceForPage(activePage);
+          const hiddenSet = new Set(sidebarLayout.hiddenItemIds);
+          const visiblePages = ws.pages.filter((p) => !hiddenSet.has(p));
+          if (visiblePages.length <= 1) return null;
+          const isPinned = sidebarLayout.pinnedItemIds.includes(activePage);
+          return (
+            <div className="flex items-center justify-between gap-2 border-b border-white/[0.08] bg-[#09090b] px-5 py-1.5">
+              <div className="flex flex-wrap items-center gap-1">
+                {visiblePages.map((pid) => {
+                  const meta = ALL_NAV_ITEMS.find((m) => m.id === pid);
+                  const active =
+                    activePage === pid ||
+                    (pid === 'pm2' && activePage === 'pm2-detail') ||
+                    (pid === 'servers' && activePage === 'server-detail') ||
+                    (pid === 'monitors' && activePage === 'monitor-detail');
+                  return (
+                    <button
+                      key={pid}
+                      type="button"
+                      onClick={() => handleNavigate(pid)}
+                      className={`rounded px-2.5 py-1 font-mono text-[11px] transition-colors ${
+                        active
+                          ? 'bg-white/[0.09] text-zinc-100'
+                          : 'text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200'
+                      }`}
+                    >
+                      {meta?.label ?? pid}
+                    </button>
+                  );
+                })}
+              </div>
+              <button
+                type="button"
+                onClick={() => togglePinPage(activePage)}
+                className={`rounded border px-2 py-0.5 font-mono text-[10px] ${
+                  isPinned
+                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                    : 'border-white/[0.08] text-zinc-400 hover:text-zinc-200'
+                }`}
+                title="Pin or unpin current page to sidebar"
+              >
+                {isPinned ? '★ Pinned' : '☆ Pin'}
+              </button>
+            </div>
+          );
+        })()}
+        <main className="flex-1 overflow-y-auto p-5 lg:p-6">
             <div className="mx-auto w-full max-w-[1600px]">
               <DashboardSkeleton />
             </div>
@@ -598,12 +674,9 @@ export const App: React.FC = () => {
         degradedItems={degradedItems}
         collapsed={sidebarCollapsed}
         layoutConfig={sidebarLayout}
-        onToggleGroupCollapse={(groupId) =>
-          setSidebarLayout((prev) => ({
-            ...prev,
-            groups: prev.groups.map((g) => (g.id === groupId ? { ...g, collapsed: !g.collapsed } : g)),
-          }))
-        }
+        recentPages={recentPages}
+        onOpenQuickSwitcher={() => setQuickSwitcherOpen(true)}
+        onRemoveRecent={(p) => setRecentPages((prev) => prev.filter((x) => x !== p))}
         onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
         onNavigate={handleNavigate}
         onSelectDegradedItem={(item) => {
@@ -1012,6 +1085,14 @@ export const App: React.FC = () => {
         confirmLabel="Delete Monitor"
         onConfirm={() => void handleConfirmDelete()}
         onCancel={() => setDeleteTarget(null)}
+      />
+
+      <QuickSwitcher
+        isOpen={quickSwitcherOpen}
+        pinnedIds={sidebarLayout.pinnedItemIds}
+        onClose={() => setQuickSwitcherOpen(false)}
+        onSelectPage={handleNavigate}
+        onTogglePin={togglePinPage}
       />
 
       <ToastContainer

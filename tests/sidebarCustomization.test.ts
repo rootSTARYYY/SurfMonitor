@@ -2,15 +2,22 @@ import { describe, expect, it } from 'vitest';
 import {
   ALL_NAV_ITEMS,
   DEFAULT_SIDEBAR_LAYOUT,
+  findWorkspaceForPage,
   resetSidebarLayout,
+  WORKSPACES,
 } from '../src/utils/sidebarConfig';
 
-describe('Sidebar & Navigation Customization', () => {
-  it('includes all v5.0.0 navigation items in default layout', () => {
-    const inGroups = new Set(DEFAULT_SIDEBAR_LAYOUT.groups.flatMap((g) => g.itemIds));
+describe('Workspace-Based Sidebar & Navigation Registry', () => {
+  it('maps every registered navigation item to a valid workspace', () => {
+    const wsIds = new Set(WORKSPACES.map((w) => w.id));
+    const inWorkspaces = new Set(WORKSPACES.flatMap((w) => w.pages));
     for (const item of ALL_NAV_ITEMS) {
-      expect(inGroups.has(item.id)).toBe(true);
+      expect(wsIds.has(item.workspace)).toBe(true);
+      expect(inWorkspaces.has(item.id)).toBe(true);
     }
+    expect(findWorkspaceForPage('terminal').id).toBe('remote');
+    expect(findWorkspaceForPage('pm2-detail').id).toBe('infrastructure');
+    expect(findWorkspaceForPage('monitor-detail').id).toBe('monitoring');
   });
 
   it('restores default sidebar layout cleanly', () => {
